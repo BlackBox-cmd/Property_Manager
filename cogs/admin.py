@@ -1,6 +1,7 @@
 """Admin tools: /rent-summary, /all-links (multi-server)."""
 
-import logging
+from collections import defaultdict
+
 import pandas as pd
 import discord
 from discord import app_commands
@@ -8,16 +9,13 @@ from discord.ext import commands
 
 import database as db
 from config import FOOTER_TEXT
-from cogs.reminders import classify_status
-
-log = logging.getLogger("RentManager.admin")
+from cogs.reminders import classify_status, _get_deadline
 
 
 class AdminCog(commands.Cog):
     """Admin reporting tools."""
 
-    def __init__(self, bot: commands.Bot):
-        self.bot = bot
+    pass
 
     @app_commands.command(
         name="rent-summary",
@@ -40,8 +38,9 @@ class AdminCog(commands.Cog):
         # Build DataFrame for Pandas analysis
         df = pd.DataFrame(all_data)
 
-        # Classify statuses using the deadline logic
-        df["classified"] = df["status"].apply(classify_status)
+        # Classify statuses using the per-guild deadline
+        deadline = _get_deadline(guild_id)
+        df["classified"] = df["status"].apply(lambda s: classify_status(s, deadline))
 
         # Aggregate
         total_entries = len(df)
@@ -161,7 +160,6 @@ class AdminCog(commands.Cog):
             return await interaction.response.send_message(embed=embed, ephemeral=True)
 
         # Group by discord_id
-        from collections import defaultdict
         grouped = defaultdict(list)
         for link in links:
             grouped[link["discord_id"]].append(link["in_game_cid"])

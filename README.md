@@ -34,6 +34,7 @@
 | `/rent-summary` | View rent collection summary | Admin |
 | `/all-links` | View all Discord ↔ CID links | Admin |
 | `/set-rent-channel` | Set channel for rent reminders | Admin |
+| `/set-deadline` | Set the rent payment deadline date | Admin |
 | `/send-reminders` | Manually trigger rent reminders | Admin |
 
 ## 🚀 Setup
@@ -115,6 +116,7 @@ Reminders run **every 24 hours** automatically and can also be triggered manuall
 |---------|-----------|-------------|
 | `DISCORD_TOKEN` | `.env` file | Your bot's authentication token |
 | Rent Channel | `/set-rent-channel` | Where reminders get posted |
+| Rent Deadline | `/set-deadline` | Date by which rent must be paid (defaults to 18th of current month) |
 
 ## 🤝 Contributing
 

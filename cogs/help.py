@@ -33,6 +33,7 @@ COMMAND_CATEGORIES = {
         "description": "Automated rent payment reminders.",
         "commands": [
             ("/set-rent-channel", "Set the channel for posting rent reminders", True),
+            ("/set-deadline", "Set the rent payment deadline date (MM/DD/YYYY)", True),
             ("/send-reminders", "Manually trigger rent reminders right now", True),
         ],
     },
@@ -90,11 +91,17 @@ class HelpView(discord.ui.View):
     def __init__(self, *, timeout: float = 120):
         super().__init__(timeout=timeout)
         self.add_item(CategorySelect())
+        self.message: discord.Message | None = None
 
     async def on_timeout(self):
-        # Disable the dropdown after timeout
+        # Disable the dropdown and push the edit to Discord
         for item in self.children:
             item.disabled = True
+        if self.message:
+            try:
+                await self.message.edit(view=self)
+            except discord.HTTPException:
+                pass
 
 
 def _overview_embed() -> discord.Embed:
@@ -128,9 +135,6 @@ def _overview_embed() -> discord.Embed:
 class HelpCog(commands.Cog):
     """Interactive help command."""
 
-    def __init__(self, bot: commands.Bot):
-        self.bot = bot
-
     @app_commands.command(
         name="help",
         description="Show all available commands and how to use them",
@@ -143,6 +147,8 @@ class HelpCog(commands.Cog):
             view=view,
             ephemeral=True,
         )
+        # Store the message reference so on_timeout can edit it
+        view.message = await interaction.original_response()
 
 
 async def setup(bot: commands.Bot):

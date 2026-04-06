@@ -1,4 +1,4 @@
-﻿"""SQLite database for CID linking, settings, and rent data per guild."""
+"""SQLite database for CID linking, settings, and rent data per guild."""
 
 import logging
 import sqlite3
@@ -248,13 +248,4 @@ def get_all_rent_data(guild_id: int) -> list[dict]:
     conn.close()
     return [dict(r) for r in rows]
 
-
-def get_rent_data_for_cid(guild_id: int, cid: int) -> list[dict]:
-    """Get all rent entries for a specific CID in a guild."""
-    conn = get_db()
-    rows = conn.execute(
-        "SELECT * FROM rent_data WHERE guild_id = ? AND renter_cid = ? ORDER BY address",
-        (guild_id, cid),
-    ).fetchall()
-    conn.close()
     return [dict(r) for r in rows]

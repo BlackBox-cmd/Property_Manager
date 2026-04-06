@@ -1,4 +1,4 @@
-"""Automated reminder system: /set-rent-channel + daily task (multi-server)."""
+"""Automated reminder system: /set-rent-channel, /set-deadline + daily task (multi-server)."""
 
 import logging
 from datetime import datetime
@@ -14,21 +14,16 @@ from config import FOOTER_TEXT
 log = logging.getLogger("RentManager.reminders")
 
 RENT_CHANNEL_KEY = "rent_channel_id"
-
-# ── Deadline: March 18, 2026 ─────────────────────────────────
-DEADLINE = datetime(2026, 3, 18)
-
-# Discord embed description limit
-EMBED_DESC_LIMIT = 4096
+DEADLINE_KEY = "rent_deadline"
 
 
-def classify_status(raw_status: str) -> str:
-    """Classify a rent entry's status based on the March 18, 2026 deadline.
+def classify_status(raw_status: str, deadline: datetime) -> str:
+    """Classify a rent entry's status based on a configurable deadline.
 
     Logic:
     - "Overdue" or "Evictable" -> keep as-is (already delinquent)
-    - "Paid MM/DD/YYYY" -> if date < March 18, 2026  -> "Expired"
-                        -> if date >= March 18, 2026 -> "Paid" (valid)
+    - "Paid MM/DD/YYYY" -> if date < deadline  -> "Expired"
+                        -> if date >= deadline -> "Paid" (valid)
     """
     status = raw_status.strip()
 
@@ -43,17 +38,33 @@ def classify_status(raw_status: str) -> str:
             try:
                 paid_date = datetime.strptime(date_str, "%m/%d/%Y")
             except ValueError:
-                try:
-                    paid_date = datetime.strptime(date_str, "%m/%d/%Y")
-                except ValueError:
-                    return status  # Can't parse, return raw
+                return status  # Can't parse, return raw
 
-            if paid_date < DEADLINE:
+            if paid_date < deadline:
                 return "Expired"
             else:
                 return "Paid"
 
     return status
+
+
+def _get_deadline(guild_id: int) -> datetime:
+    """Load the rent deadline for a guild from the DB.
+
+    Falls back to the 18th of the current month if not configured.
+    """
+    deadline_str = db.get_setting(guild_id, DEADLINE_KEY)
+    if deadline_str:
+        try:
+            return datetime.strptime(deadline_str, "%Y-%m-%d")
+        except ValueError:
+            log.warning(
+                f"[Guild {guild_id}] Invalid deadline format '{deadline_str}', "
+                "using 18th of current month."
+            )
+    # Default: 18th of the current month
+    now = datetime.now()
+    return now.replace(day=18, hour=0, minute=0, second=0, microsecond=0)
 
 
 def _embed(title: str, description: str, color: int) -> discord.Embed:
@@ -64,12 +75,19 @@ def _embed(title: str, description: str, color: int) -> discord.Embed:
 
 
 def _chunk_lines(lines: list[str], max_chars: int = 3800) -> list[list[str]]:
-    """Split a list of lines into chunks that fit within max_chars."""
+    """Split a list of lines into chunks that fit within max_chars.
+
+    If a single line exceeds max_chars, it is truncated with an ellipsis
+    to prevent Discord embed failures.
+    """
     chunks = []
     current = []
     current_len = 0
     for line in lines:
-        line_len = len(line) + 1
+        # Truncate any single line that alone exceeds the limit
+        if len(line) > max_chars:
+            line = line[: max_chars - 20] + "… *(truncated)*"
+        line_len = len(line) + 1  # +1 for newline
         if current_len + line_len > max_chars and current:
             chunks.append(current)
             current = []
@@ -116,6 +134,41 @@ class RemindersCog(commands.Cog):
             )
         )
 
+    # ── /set-deadline ─────────────────────────────────────────
+    @app_commands.command(
+        name="set-deadline",
+        description="Set the rent payment deadline date for this server",
+    )
+    @app_commands.describe(
+        date="Deadline date in MM/DD/YYYY format (e.g. 04/18/2026)",
+    )
+    @app_commands.guild_only()
+    @app_commands.default_permissions(administrator=True)
+    async def set_deadline(self, interaction: discord.Interaction, date: str):
+        try:
+            parsed = datetime.strptime(date.strip(), "%m/%d/%Y")
+        except ValueError:
+            return await interaction.response.send_message(
+                embed=_embed(
+                    "❌ Invalid Date",
+                    f"Could not parse **{date}**.\n"
+                    "Please use `MM/DD/YYYY` format (e.g. `04/18/2026`).",
+                    0xE74C3C,
+                ),
+                ephemeral=True,
+            )
+
+        db.set_setting(interaction.guild_id, DEADLINE_KEY, parsed.strftime("%Y-%m-%d"))
+        await interaction.response.send_message(
+            embed=_embed(
+                "✅ Deadline Updated",
+                f"Rent payment deadline set to **{parsed.strftime('%B %d, %Y')}**.\n\n"
+                "Payments dated before this deadline will be classified as **Expired**.\n"
+                "Payments on or after this date will be classified as **Paid**.",
+                0x2ECC71,
+            )
+        )
+
     # ── /send-reminders (manual trigger) ──────────────────────
     @app_commands.command(
         name="send-reminders",
@@ -126,7 +179,20 @@ class RemindersCog(commands.Cog):
     async def send_reminders_now(self, interaction: discord.Interaction):
         await interaction.response.defer(thinking=True)
         guild_id = interaction.guild_id
-        result = await self._send_reminders_for_guild(guild_id)
+        try:
+            result = await self._send_reminders_for_guild(guild_id)
+        except Exception as e:
+            log.error(f"[Guild {guild_id}] Manual reminder error: {e}", exc_info=True)
+            result = None
+            await interaction.followup.send(
+                embed=_embed(
+                    "❌ Reminder Failed",
+                    f"An error occurred while sending reminders:\n```\n{e}\n```",
+                    0xE74C3C,
+                )
+            )
+            return
+
         await interaction.followup.send(
             embed=_embed(
                 "📨 Reminders Sent" if result else "ℹ️ No Reminders Needed",
@@ -174,12 +240,15 @@ class RemindersCog(commands.Cog):
         if not channel:
             try:
                 channel = await self.bot.fetch_channel(int(channel_id_str))
-            except (discord.NotFound, discord.Forbidden):
+            except (discord.NotFound, discord.Forbidden, discord.HTTPException):
                 pass
 
         if not channel:
             log.warning(f"[Guild {guild_id}] Rent channel {channel_id_str} not found.")
             return None
+
+        # Load the deadline for this guild
+        deadline = _get_deadline(guild_id)
 
         # Get all rent data for this guild
         all_rent = db.get_all_rent_data(guild_id)
@@ -189,7 +258,7 @@ class RemindersCog(commands.Cog):
         # Classify each entry and find delinquent ones
         delinquent = []
         for entry in all_rent:
-            classified = classify_status(entry["status"])
+            classified = classify_status(entry["status"], deadline)
             if classified in ("Overdue", "Evictable", "Expired"):
                 entry["classified_status"] = classified
                 delinquent.append(entry)
@@ -235,6 +304,7 @@ class RemindersCog(commands.Cog):
             chunks = _chunk_lines(debt_lines, max_chars=3500)
 
             # ── Post to the rent channel ──────────────────────
+            channel_ok = True
             for i, chunk in enumerate(chunks):
                 header = f"<@{discord_id}>, you have outstanding rent for:\n\n"
                 footer_text = "\n\nPlease pay immediately to avoid eviction."
@@ -259,9 +329,11 @@ class RemindersCog(commands.Cog):
                 except (discord.Forbidden, discord.HTTPException) as e:
                     log.warning(f"[Guild {guild_id}] Failed to send reminder to {discord_id}: {e}")
                     send_failures += 1
+                    channel_ok = False
                     break  # Skip remaining chunks for this user
 
-            messages_sent += 1
+            if channel_ok:
+                messages_sent += 1
 
             # ── Also DM the user directly ─────────────────────
             try:
@@ -274,7 +346,7 @@ class RemindersCog(commands.Cog):
                     dm_footer_text = "\n\nPlease pay immediately to avoid eviction."
 
                     dm_chunks = _chunk_lines(debt_lines, max_chars=3500)
-                    for j, dm_chunk in enumerate(dm_chunks):
+                    for dm_chunk in dm_chunks:
                         dm_embed = discord.Embed(
                             title="🔔 Rent Payment Reminder",
                             description=dm_header + "\n".join(dm_chunk) + dm_footer_text,

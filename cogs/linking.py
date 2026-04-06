@@ -24,8 +24,7 @@ def _is_admin(member: discord.Member) -> bool:
 class LinkingCog(commands.Cog):
     """Self-service CID linking for players."""
 
-    def __init__(self, bot: commands.Bot):
-        self.bot = bot
+    pass
 
     @app_commands.command(
         name="link-cid",

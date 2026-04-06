@@ -67,9 +67,9 @@ def clean_and_parse(raw_text: str) -> pd.DataFrame:
 
     rejoined = "\n".join(joined_lines)
 
-    # 3. Remove commas from currency values ($1,500 → $1500) before CSV parsing
+    # 3. Remove commas from currency values ($1,234,567 → $1234567) before CSV parsing
     #    so they don't get treated as extra column separators.
-    rejoined = re.sub(r'\$(\d+),(\d+)', lambda m: f'${m.group(1)}{m.group(2)}', rejoined)
+    rejoined = re.sub(r'\$[\d,]+', lambda m: m.group().replace(',', ''), rejoined)
 
     # 4. Parse with Pandas
     df = pd.read_csv(
