@@ -58,10 +58,10 @@ class LinkingCog(commands.Cog):
         else:
             subject = interaction.user
 
-        result = db.link_cid(guild_id, subject.id, cid)
+        result = await db.link_cid(guild_id, subject.id, cid)
 
         if result == "linked":
-            all_cids = db.get_cids_for_user(guild_id, subject.id)
+            all_cids = await db.get_cids_for_user(guild_id, subject.id)
             cid_list = ", ".join(str(c) for c in all_cids)
 
             if subject.id == interaction.user.id:
@@ -93,7 +93,7 @@ class LinkingCog(commands.Cog):
             )
 
         elif result == "cid_taken":
-            owner_id = db.get_discord_id_for_cid(guild_id, cid)
+            owner_id = await db.get_discord_id_for_cid(guild_id, cid)
             owner_mention = f"<@{owner_id}>" if owner_id else "another user"
             await interaction.response.send_message(
                 embed=_embed(
@@ -138,9 +138,9 @@ class LinkingCog(commands.Cog):
         else:
             subject = interaction.user
 
-        removed = db.unlink_cid(guild_id, subject.id, cid)
+        removed = await db.unlink_cid(guild_id, subject.id, cid)
         if removed:
-            remaining = db.get_cids_for_user(guild_id, subject.id)
+            remaining = await db.get_cids_for_user(guild_id, subject.id)
 
             if subject.id == interaction.user.id:
                 desc = f"CID **{cid}** has been unlinked from your account."
@@ -177,7 +177,7 @@ class LinkingCog(commands.Cog):
     @app_commands.guild_only()
     async def my_cids(self, interaction: discord.Interaction):
         guild_id = interaction.guild_id
-        cids = db.get_cids_for_user(guild_id, interaction.user.id)
+        cids = await db.get_cids_for_user(guild_id, interaction.user.id)
         if cids:
             cid_list = "\n".join(f"• CID **{c}**" for c in cids)
             await interaction.response.send_message(

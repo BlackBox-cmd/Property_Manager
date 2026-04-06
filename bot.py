@@ -72,7 +72,7 @@ async def on_ready():
 
 
 async def main():
-    init_db()
+    await init_db()
     log.info("Database initialized.")
 
     for cog in COGS:

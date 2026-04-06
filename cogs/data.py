@@ -326,7 +326,7 @@ class DataCog(commands.Cog):
             unique_renters = df["Renter CID"].nunique()
 
             # Everything validated — now atomically replace guild data
-            db.replace_rent_data(guild_id, rows)
+            await db.replace_rent_data(guild_id, rows)
 
             embed = discord.Embed(
                 title="✅ Data Updated Successfully",

@@ -48,12 +48,12 @@ def classify_status(raw_status: str, deadline: datetime) -> str:
     return status
 
 
-def _get_deadline(guild_id: int) -> datetime:
+async def _get_deadline(guild_id: int) -> datetime:
     """Load the rent deadline for a guild from the DB.
 
     Falls back to the 18th of the current month if not configured.
     """
-    deadline_str = db.get_setting(guild_id, DEADLINE_KEY)
+    deadline_str = await db.get_setting(guild_id, DEADLINE_KEY)
     if deadline_str:
         try:
             return datetime.strptime(deadline_str, "%Y-%m-%d")
@@ -123,7 +123,7 @@ class RemindersCog(commands.Cog):
         self, interaction: discord.Interaction, channel: discord.TextChannel,
     ):
         guild_id = interaction.guild_id
-        db.set_setting(guild_id, RENT_CHANNEL_KEY, str(channel.id))
+        await db.set_setting(guild_id, RENT_CHANNEL_KEY, str(channel.id))
         await interaction.response.send_message(
             embed=_embed(
                 "✅ Rent Channel Set",
@@ -158,7 +158,7 @@ class RemindersCog(commands.Cog):
                 ephemeral=True,
             )
 
-        db.set_setting(interaction.guild_id, DEADLINE_KEY, parsed.strftime("%Y-%m-%d"))
+        await db.set_setting(interaction.guild_id, DEADLINE_KEY, parsed.strftime("%Y-%m-%d"))
         await interaction.response.send_message(
             embed=_embed(
                 "✅ Deadline Updated",
@@ -207,7 +207,7 @@ class RemindersCog(commands.Cog):
         """Run the reminder check every 24 hours for ALL guilds."""
         try:
             # Get all guilds that have a rent channel configured
-            guild_settings = db.get_all_guild_settings(RENT_CHANNEL_KEY)
+            guild_settings = await db.get_all_guild_settings(RENT_CHANNEL_KEY)
             if not guild_settings:
                 log.info("No guilds have a rent channel set. Skipping daily reminders.")
                 return
@@ -230,7 +230,7 @@ class RemindersCog(commands.Cog):
     async def _send_reminders_for_guild(self, guild_id: int) -> str | None:
         """Process rent data for a single guild, group by user, send reminders."""
         # Get the designated channel for this guild
-        channel_id_str = db.get_setting(guild_id, RENT_CHANNEL_KEY)
+        channel_id_str = await db.get_setting(guild_id, RENT_CHANNEL_KEY)
         if not channel_id_str:
             log.warning(f"[Guild {guild_id}] No rent channel set. Skipping reminders.")
             return None
@@ -248,10 +248,10 @@ class RemindersCog(commands.Cog):
             return None
 
         # Load the deadline for this guild
-        deadline = _get_deadline(guild_id)
+        deadline = await _get_deadline(guild_id)
 
         # Get all rent data for this guild
-        all_rent = db.get_all_rent_data(guild_id)
+        all_rent = await db.get_all_rent_data(guild_id)
         if not all_rent:
             return None
 
@@ -273,7 +273,7 @@ class RemindersCog(commands.Cog):
 
         for entry in delinquent:
             cid = entry["renter_cid"]
-            discord_id = db.get_discord_id_for_cid(guild_id, cid)
+            discord_id = await db.get_discord_id_for_cid(guild_id, cid)
             if discord_id:
                 user_debts[discord_id].append(entry)
             else:

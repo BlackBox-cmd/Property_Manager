@@ -1,53 +1,61 @@
-"""SQLite database for CID linking, settings, and rent data per guild."""
+"""PostgreSQL database for CID linking, settings, and rent data per guild."""
 
 import logging
-import sqlite3
-from pathlib import Path
+import os
+import asyncpg
+from dotenv import load_dotenv
 
-DB_PATH = Path(__file__).parent / "rent_manager.db"
+load_dotenv()
+DB_URL = os.getenv("DATABASE_URL")
 log = logging.getLogger("RentManager.database")
 
+_pool = None
 
-def get_db() -> sqlite3.Connection:
-    """Get a database connection with row factory."""
-    conn = sqlite3.connect(str(DB_PATH))
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA journal_mode=WAL")
-    conn.execute("PRAGMA foreign_keys=ON")
-    return conn
+async def init_pool():
+    global _pool
+    if _pool is None:
+        if not DB_URL:
+            # Optionally default to local for testing if they forgot it, but we should assert instead so they know it failed
+            raise ValueError("DATABASE_URL environment variable is not set!")
+        _pool = await asyncpg.create_pool(DB_URL)
 
+async def get_db():
+    global _pool
+    if _pool is None:
+        await init_pool()
+    return _pool
 
-def init_db():
-    """Initialize schema and run idempotent migrations."""
-    conn = get_db()
-    try:
-        conn.executescript(
+async def init_db():
+    """Initialize schema and run migrations."""
+    pool = await get_db()
+    async with pool.acquire() as conn:
+        await conn.execute(
             """
             CREATE TABLE IF NOT EXISTS discord_links (
-                id              INTEGER PRIMARY KEY AUTOINCREMENT,
-                guild_id        INTEGER NOT NULL,
-                discord_id      INTEGER NOT NULL,
-                in_game_cid     INTEGER NOT NULL,
+                id              SERIAL PRIMARY KEY,
+                guild_id        BIGINT NOT NULL,
+                discord_id      BIGINT NOT NULL,
+                in_game_cid     BIGINT NOT NULL,
                 linked_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
 
             CREATE TABLE IF NOT EXISTS settings (
-                guild_id    INTEGER NOT NULL,
+                guild_id    BIGINT NOT NULL,
                 key         TEXT NOT NULL,
                 value       TEXT NOT NULL,
                 PRIMARY KEY (guild_id, key)
             );
 
             CREATE TABLE IF NOT EXISTS rent_data (
-                id              INTEGER PRIMARY KEY AUTOINCREMENT,
-                guild_id        INTEGER NOT NULL,
+                id              SERIAL PRIMARY KEY,
+                guild_id        BIGINT NOT NULL,
                 status          TEXT NOT NULL,
                 address         TEXT NOT NULL,
                 interior        TEXT,
-                renter_cid      INTEGER,
+                renter_cid      BIGINT,
                 renter_name     TEXT,
-                income          INTEGER NOT NULL DEFAULT 0,
-                cost            INTEGER NOT NULL DEFAULT 0,
+                income          BIGINT NOT NULL DEFAULT 0,
+                cost            BIGINT NOT NULL DEFAULT 0,
                 uploaded_at     TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
 
@@ -60,41 +68,34 @@ def init_db():
             """
         )
 
-        # Migration: keep newest (linked_at, then id) per (guild_id, in_game_cid).
-        dupes_removed = conn.execute(
-            """
-            DELETE FROM discord_links AS old
-            WHERE EXISTS (
-                SELECT 1
-                FROM discord_links AS newer
-                WHERE newer.guild_id = old.guild_id
-                  AND newer.in_game_cid = old.in_game_cid
-                  AND (
-                      COALESCE(newer.linked_at, '') > COALESCE(old.linked_at, '')
-                      OR (
-                          COALESCE(newer.linked_at, '') = COALESCE(old.linked_at, '')
-                          AND newer.id > old.id
-                      )
-                  )
+        try:
+            # Migration: keep newest (linked_at, then id) per (guild_id, in_game_cid). PostgreSQL syntax
+            dupes_removed = await conn.execute(
+                """
+                DELETE FROM discord_links
+                WHERE id IN (
+                    SELECT id FROM (
+                        SELECT id,
+                        ROW_NUMBER() OVER( PARTITION BY guild_id, in_game_cid ORDER BY linked_at DESC, id DESC ) as row_num
+                        FROM discord_links
+                    ) t
+                    WHERE t.row_num > 1
+                )
+                """
             )
-            """
-        ).rowcount
-        if dupes_removed:
-            log.info("Migration: removed %s duplicate CID link(s).", dupes_removed)
+            if dupes_removed and not dupes_removed.startswith('DELETE 0'):
+                log.info("Migration: removed duplicate CID link(s) - %s", dupes_removed)
 
-        conn.execute(
-            "CREATE UNIQUE INDEX IF NOT EXISTS uq_guild_cid "
-            "ON discord_links(guild_id, in_game_cid)"
-        )
-        conn.commit()
-    except Exception:
-        conn.rollback()
-        raise
-    finally:
-        conn.close()
+            await conn.execute(
+                "CREATE UNIQUE INDEX IF NOT EXISTS uq_guild_cid "
+                "ON discord_links(guild_id, in_game_cid)"
+            )
+        except Exception as e:
+            log.error("Migration error: %s", e)
+            raise
 
 
-def link_cid(guild_id: int, discord_id: int, cid: int) -> str:
+async def link_cid(guild_id: int, discord_id: int, cid: int) -> str:
     """Link a Discord user to a CID in a guild.
 
     Returns:
@@ -102,150 +103,136 @@ def link_cid(guild_id: int, discord_id: int, cid: int) -> str:
     - "already_linked": this user already owns the CID
     - "cid_taken": CID is owned by another user
     """
-    conn = get_db()
+    pool = await get_db()
     try:
-        existing = conn.execute(
-            "SELECT discord_id FROM discord_links WHERE guild_id = ? AND in_game_cid = ?",
-            (guild_id, cid),
-        ).fetchone()
+        existing = await pool.fetchrow(
+            "SELECT discord_id FROM discord_links WHERE guild_id = $1 AND in_game_cid = $2",
+            guild_id, cid
+        )
 
         if existing:
             return "already_linked" if existing["discord_id"] == discord_id else "cid_taken"
 
-        conn.execute(
-            "INSERT INTO discord_links (guild_id, discord_id, in_game_cid) VALUES (?, ?, ?)",
-            (guild_id, discord_id, cid),
+        await pool.execute(
+            "INSERT INTO discord_links (guild_id, discord_id, in_game_cid) VALUES ($1, $2, $3)",
+            guild_id, discord_id, cid
         )
-        conn.commit()
         return "linked"
-    except sqlite3.IntegrityError:
-        existing = conn.execute(
-            "SELECT discord_id FROM discord_links WHERE guild_id = ? AND in_game_cid = ?",
-            (guild_id, cid),
-        ).fetchone()
+    except asyncpg.exceptions.UniqueViolationError:
+        existing = await pool.fetchrow(
+            "SELECT discord_id FROM discord_links WHERE guild_id = $1 AND in_game_cid = $2",
+            guild_id, cid
+        )
         if existing and existing["discord_id"] == discord_id:
             return "already_linked"
         return "cid_taken"
-    finally:
-        conn.close()
 
 
-def unlink_cid(guild_id: int, discord_id: int, cid: int) -> bool:
+async def unlink_cid(guild_id: int, discord_id: int, cid: int) -> bool:
     """Unlink a Discord user from a CID in a guild."""
-    conn = get_db()
-    cursor = conn.execute(
-        "DELETE FROM discord_links WHERE guild_id = ? AND discord_id = ? AND in_game_cid = ?",
-        (guild_id, discord_id, cid),
+    pool = await get_db()
+    status = await pool.execute(
+        "DELETE FROM discord_links WHERE guild_id = $1 AND discord_id = $2 AND in_game_cid = $3",
+        guild_id, discord_id, cid
     )
-    conn.commit()
-    removed = cursor.rowcount > 0
-    conn.close()
+    removed = status.startswith('DELETE ') and status != 'DELETE 0'
     return removed
 
 
-def get_cids_for_user(guild_id: int, discord_id: int) -> list[int]:
+async def get_cids_for_user(guild_id: int, discord_id: int) -> list[int]:
     """Get all CIDs linked to a Discord user in a guild."""
-    conn = get_db()
-    rows = conn.execute(
-        "SELECT in_game_cid FROM discord_links WHERE guild_id = ? AND discord_id = ?",
-        (guild_id, discord_id),
-    ).fetchall()
-    conn.close()
+    pool = await get_db()
+    rows = await pool.fetch(
+        "SELECT in_game_cid FROM discord_links WHERE guild_id = $1 AND discord_id = $2",
+        guild_id, discord_id
+    )
     return [r["in_game_cid"] for r in rows]
 
 
-def get_discord_id_for_cid(guild_id: int, cid: int) -> int | None:
+async def get_discord_id_for_cid(guild_id: int, cid: int) -> int | None:
     """Get the Discord user ID that owns a CID in a guild."""
-    conn = get_db()
-    row = conn.execute(
-        "SELECT discord_id FROM discord_links WHERE guild_id = ? AND in_game_cid = ?",
-        (guild_id, cid),
-    ).fetchone()
-    conn.close()
+    pool = await get_db()
+    row = await pool.fetchrow(
+        "SELECT discord_id FROM discord_links WHERE guild_id = $1 AND in_game_cid = $2",
+        guild_id, cid
+    )
     return row["discord_id"] if row else None
 
 
-def get_all_links(guild_id: int) -> list[dict]:
+async def get_all_links(guild_id: int) -> list[dict]:
     """Get all Discord <-> CID links for a guild."""
-    conn = get_db()
-    rows = conn.execute(
-        "SELECT discord_id, in_game_cid FROM discord_links WHERE guild_id = ? ORDER BY discord_id",
-        (guild_id,),
-    ).fetchall()
-    conn.close()
+    pool = await get_db()
+    rows = await pool.fetch(
+        "SELECT discord_id, in_game_cid FROM discord_links WHERE guild_id = $1 ORDER BY discord_id",
+        guild_id
+    )
     return [dict(r) for r in rows]
 
 
-def set_setting(guild_id: int, key: str, value: str):
+async def set_setting(guild_id: int, key: str, value: str):
     """Set a bot setting for a guild (upsert)."""
-    conn = get_db()
-    conn.execute(
-        "INSERT INTO settings (guild_id, key, value) VALUES (?, ?, ?) "
+    pool = await get_db()
+    await pool.execute(
+        "INSERT INTO settings (guild_id, key, value) VALUES ($1, $2, $3) "
         "ON CONFLICT(guild_id, key) DO UPDATE SET value = excluded.value",
-        (guild_id, key, value),
+        guild_id, key, value
     )
-    conn.commit()
-    conn.close()
 
 
-def get_setting(guild_id: int, key: str) -> str | None:
+async def get_setting(guild_id: int, key: str) -> str | None:
     """Get a bot setting by key for a guild."""
-    conn = get_db()
-    row = conn.execute(
-        "SELECT value FROM settings WHERE guild_id = ? AND key = ?",
-        (guild_id, key),
-    ).fetchone()
-    conn.close()
+    pool = await get_db()
+    row = await pool.fetchrow(
+        "SELECT value FROM settings WHERE guild_id = $1 AND key = $2",
+        guild_id, key
+    )
     return row["value"] if row else None
 
 
-def get_all_guild_settings(key: str) -> list[dict]:
+async def get_all_guild_settings(key: str) -> list[dict]:
     """Get a specific setting across all guilds."""
-    conn = get_db()
-    rows = conn.execute(
-        "SELECT guild_id, value FROM settings WHERE key = ?",
-        (key,),
-    ).fetchall()
-    conn.close()
+    pool = await get_db()
+    rows = await pool.fetch(
+        "SELECT guild_id, value FROM settings WHERE key = $1",
+        key
+    )
     return [dict(r) for r in rows]
 
 
-def replace_rent_data(guild_id: int, rows: list[dict]):
+async def replace_rent_data(guild_id: int, rows: list[dict]):
     """Replace all rent data for a guild with a fresh upload atomically."""
-    conn = get_db()
-    try:
-        conn.execute("DELETE FROM rent_data WHERE guild_id = ?", (guild_id,))
-        for r in rows:
-            conn.execute(
-                "INSERT INTO rent_data (guild_id, status, address, interior, renter_cid, renter_name, income, cost) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+    pool = await get_db()
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            await conn.execute("DELETE FROM rent_data WHERE guild_id = $1", guild_id)
+            
+            values = [
                 (
                     guild_id,
                     r["status"],
                     r["address"],
                     r["interior"],
-                    r["renter_cid"],
-                    r["renter_name"],
+                    r["renter_cid"] if r["renter_cid"] is not None else 0, # Catch None
+                    r["renter_name"] if r["renter_name"] is not None else "",
                     r["income"],
                     r["cost"],
-                ),
-            )
-        conn.commit()
-    except Exception:
-        conn.rollback()
-        raise
-    finally:
-        conn.close()
+                )
+                for r in rows
+            ]
+            
+            if values:
+                await conn.executemany(
+                    "INSERT INTO rent_data (guild_id, status, address, interior, renter_cid, renter_name, income, cost) "
+                    "VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
+                    values
+                )
 
 
-def get_all_rent_data(guild_id: int) -> list[dict]:
+async def get_all_rent_data(guild_id: int) -> list[dict]:
     """Get all current rent data for a guild."""
-    conn = get_db()
-    rows = conn.execute(
-        "SELECT * FROM rent_data WHERE guild_id = ? ORDER BY address",
-        (guild_id,),
-    ).fetchall()
-    conn.close()
-    return [dict(r) for r in rows]
-
+    pool = await get_db()
+    rows = await pool.fetch(
+        "SELECT * FROM rent_data WHERE guild_id = $1 ORDER BY address",
+        guild_id
+    )
     return [dict(r) for r in rows]

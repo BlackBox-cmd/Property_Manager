@@ -25,7 +25,7 @@ class AdminCog(commands.Cog):
     @app_commands.default_permissions(administrator=True)
     async def rent_summary(self, interaction: discord.Interaction):
         guild_id = interaction.guild_id
-        all_data = db.get_all_rent_data(guild_id)
+        all_data = await db.get_all_rent_data(guild_id)
         if not all_data:
             embed = discord.Embed(
                 title="ℹ️ No Data",
@@ -39,7 +39,7 @@ class AdminCog(commands.Cog):
         df = pd.DataFrame(all_data)
 
         # Classify statuses using the per-guild deadline
-        deadline = _get_deadline(guild_id)
+        deadline = await _get_deadline(guild_id)
         df["classified"] = df["status"].apply(lambda s: classify_status(s, deadline))
 
         # Aggregate
@@ -112,7 +112,7 @@ class AdminCog(commands.Cog):
 
             debtor_lines = []
             for (cid, name), total in top_debtors.items():
-                discord_id = db.get_discord_id_for_cid(guild_id, cid)
+                discord_id = await db.get_discord_id_for_cid(guild_id, cid)
                 mention = f"<@{discord_id}>" if discord_id else f"*{name}*"
                 debtor_lines.append(f"• {mention} (CID: {cid}) — **${total:,}**")
 
@@ -131,7 +131,10 @@ class AdminCog(commands.Cog):
 
         # Linked vs unlinked
         all_cids = set(df["renter_cid"].unique())
-        linked_count = sum(1 for c in all_cids if db.get_discord_id_for_cid(guild_id, c) is not None)
+        linked_count = 0
+        for c in all_cids:
+            if await db.get_discord_id_for_cid(guild_id, c) is not None:
+                linked_count += 1
         embed.add_field(
             name="🔗 CID Links",
             value=f"**{linked_count}/{len(all_cids)}** unique renters linked to Discord",
@@ -149,7 +152,7 @@ class AdminCog(commands.Cog):
     @app_commands.default_permissions(administrator=True)
     async def all_links(self, interaction: discord.Interaction):
         guild_id = interaction.guild_id
-        links = db.get_all_links(guild_id)
+        links = await db.get_all_links(guild_id)
         if not links:
             embed = discord.Embed(
                 title="🔗 No Links",
