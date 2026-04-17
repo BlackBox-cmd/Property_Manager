@@ -14,16 +14,15 @@ from config import FOOTER_TEXT
 log = logging.getLogger("RentManager.reminders")
 
 RENT_CHANNEL_KEY = "rent_channel_id"
-DEADLINE_KEY = "rent_deadline"
 
 
-def classify_status(raw_status: str, deadline: datetime) -> str:
-    """Classify a rent entry's status based on a configurable deadline.
+def classify_status(raw_status: str) -> str:
+    """Classify a rent entry's status based on its specific paid date.
 
     Logic:
     - "Overdue" or "Evictable" -> keep as-is (already delinquent)
-    - "Paid MM/DD/YYYY" -> if date < deadline  -> "Expired"
-                        -> if date >= deadline -> "Paid" (valid)
+    - "Paid MM/DD/YYYY" -> if date < today  -> "Expired"
+                        -> if date >= today -> "Paid" (valid)
     """
     status = raw_status.strip()
 
@@ -31,40 +30,11 @@ def classify_status(raw_status: str, deadline: datetime) -> str:
         return status.capitalize()
 
     if status.lower().startswith("paid"):
-        # Extract the date portion: "Paid 3/17/2026" -> "3/17/2026"
-        parts = status.split(" ", 1)
-        if len(parts) > 1:
-            date_str = parts[1].strip()
-            try:
-                paid_date = datetime.strptime(date_str, "%m/%d/%Y")
-            except ValueError:
-                return status  # Can't parse, return raw
-
-            if paid_date < deadline:
-                return "Expired"
-            else:
-                return "Paid"
+        return "Paid"
 
     return status
 
 
-async def _get_deadline(guild_id: int) -> datetime:
-    """Load the rent deadline for a guild from the DB.
-
-    Falls back to the 18th of the current month if not configured.
-    """
-    deadline_str = await db.get_setting(guild_id, DEADLINE_KEY)
-    if deadline_str:
-        try:
-            return datetime.strptime(deadline_str, "%Y-%m-%d")
-        except ValueError:
-            log.warning(
-                f"[Guild {guild_id}] Invalid deadline format '{deadline_str}', "
-                "using 18th of current month."
-            )
-    # Default: 18th of the current month
-    now = datetime.now()
-    return now.replace(day=18, hour=0, minute=0, second=0, microsecond=0)
 
 
 def _embed(title: str, description: str, color: int) -> discord.Embed:
@@ -130,41 +100,6 @@ class RemindersCog(commands.Cog):
                 f"Rent reminders will now be posted in {channel.mention}.\n\n"
                 "The bot will check **every 24 hours** and mention anyone "
                 "with overdue, evictable, or expired payments.",
-                0x2ECC71,
-            )
-        )
-
-    # ── /set-deadline ─────────────────────────────────────────
-    @app_commands.command(
-        name="set-deadline",
-        description="Set the rent payment deadline date for this server",
-    )
-    @app_commands.describe(
-        date="Deadline date in MM/DD/YYYY format (e.g. 04/18/2026)",
-    )
-    @app_commands.guild_only()
-    @app_commands.default_permissions(administrator=True)
-    async def set_deadline(self, interaction: discord.Interaction, date: str):
-        try:
-            parsed = datetime.strptime(date.strip(), "%m/%d/%Y")
-        except ValueError:
-            return await interaction.response.send_message(
-                embed=_embed(
-                    "❌ Invalid Date",
-                    f"Could not parse **{date}**.\n"
-                    "Please use `MM/DD/YYYY` format (e.g. `04/18/2026`).",
-                    0xE74C3C,
-                ),
-                ephemeral=True,
-            )
-
-        await db.set_setting(interaction.guild_id, DEADLINE_KEY, parsed.strftime("%Y-%m-%d"))
-        await interaction.response.send_message(
-            embed=_embed(
-                "✅ Deadline Updated",
-                f"Rent payment deadline set to **{parsed.strftime('%B %d, %Y')}**.\n\n"
-                "Payments dated before this deadline will be classified as **Expired**.\n"
-                "Payments on or after this date will be classified as **Paid**.",
                 0x2ECC71,
             )
         )
@@ -247,9 +182,6 @@ class RemindersCog(commands.Cog):
             log.warning(f"[Guild {guild_id}] Rent channel {channel_id_str} not found.")
             return None
 
-        # Load the deadline for this guild
-        deadline = await _get_deadline(guild_id)
-
         # Get all rent data for this guild
         all_rent = await db.get_all_rent_data(guild_id)
         if not all_rent:
@@ -258,7 +190,7 @@ class RemindersCog(commands.Cog):
         # Classify each entry and find delinquent ones
         delinquent = []
         for entry in all_rent:
-            classified = classify_status(entry["status"], deadline)
+            classified = classify_status(entry["status"])
             if classified in ("Overdue", "Evictable", "Expired"):
                 entry["classified_status"] = classified
                 delinquent.append(entry)

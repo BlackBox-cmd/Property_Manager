@@ -56,6 +56,7 @@ async def init_db():
                 renter_name     TEXT,
                 income          BIGINT NOT NULL DEFAULT 0,
                 cost            BIGINT NOT NULL DEFAULT 0,
+                renter_phone    TEXT,
                 uploaded_at     TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
 
@@ -89,6 +90,11 @@ async def init_db():
             await conn.execute(
                 "CREATE UNIQUE INDEX IF NOT EXISTS uq_guild_cid "
                 "ON discord_links(guild_id, in_game_cid)"
+            )
+
+            # Migration: add renter_phone to rent_data if missing
+            await conn.execute(
+                "ALTER TABLE rent_data ADD COLUMN IF NOT EXISTS renter_phone TEXT"
             )
         except Exception as e:
             log.error("Migration error: %s", e)
@@ -216,14 +222,15 @@ async def replace_rent_data(guild_id: int, rows: list[dict]):
                     r["renter_name"] if r["renter_name"] is not None else "",
                     r["income"],
                     r["cost"],
+                    r["renter_phone"] if r.get("renter_phone") else "",
                 )
                 for r in rows
             ]
             
             if values:
                 await conn.executemany(
-                    "INSERT INTO rent_data (guild_id, status, address, interior, renter_cid, renter_name, income, cost) "
-                    "VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
+                    "INSERT INTO rent_data (guild_id, status, address, interior, renter_cid, renter_name, income, cost, renter_phone) "
+                    "VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)",
                     values
                 )
 

@@ -14,7 +14,7 @@ from config import FOOTER_TEXT
 log = logging.getLogger("RentManager.data")
 
 # Required columns for a valid import (Interior is optional)
-REQUIRED_COLUMNS = {"Status", "Address", "Renter CID", "Renter Name", "Income", "Cost"}
+REQUIRED_COLUMNS = {"Status", "Address", "Renter CID", "Renter Name", "Phone", "Income", "Cost"}
 
 
 def _embed(title: str, description: str, color: int) -> discord.Embed:
@@ -278,7 +278,7 @@ class DataCog(commands.Cog):
                         "⚠️ No Valid Data",
                         "The input contained no valid rent entries after cleaning.\n"
                         "Make sure the data has the expected columns:\n"
-                        "`Status, Address, Interior, Renter CID, Renter Name, Income, Cost`",
+                        "`Status, Address, Interior, Renter CID, Renter Name, Phone, Income, Cost`",
                         0xF39C12,
                     )
                 )
@@ -292,7 +292,7 @@ class DataCog(commands.Cog):
                         f"The data is missing these required columns:\n"
                         f"**{', '.join(sorted(missing))}**\n\n"
                         "Expected columns:\n"
-                        "`Status, Address, Interior, Renter CID, Renter Name, Income, Cost`",
+                        "`Status, Address, Interior, Renter CID, Renter Name, Phone, Income, Cost`",
                         0xE74C3C,
                     )
                 )
@@ -306,6 +306,7 @@ class DataCog(commands.Cog):
                     "interior": str(row.get("Interior", "")).strip() if "Interior" in df.columns else "",
                     "renter_cid": int(row.get("Renter CID", 0)),
                     "renter_name": str(row.get("Renter Name", "")).strip() if "Renter Name" in df.columns else "",
+                    "renter_phone": str(row.get("Phone", "")).strip() if "Phone" in df.columns else "",
                     "income": int(row.get("Income", 0)),
                     "cost": int(row.get("Cost", 0)),
                 })

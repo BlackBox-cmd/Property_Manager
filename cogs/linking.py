@@ -41,18 +41,18 @@ class LinkingCog(commands.Cog):
         cid: int,
         target_user: discord.Member = None,
     ):
+        await interaction.response.defer(ephemeral=True)
         guild_id = interaction.guild_id
 
         # If targeting another user, require admin
         if target_user is not None and target_user.id != interaction.user.id:
             if not _is_admin(interaction.user):
-                return await interaction.response.send_message(
+                return await interaction.followup.send(
                     embed=_embed(
                         "❌ Permission Denied",
                         "Only admins can link a CID to another user.",
                         0xE74C3C,
                     ),
-                    ephemeral=True,
                 )
             subject = target_user
         else:
@@ -76,26 +76,24 @@ class LinkingCog(commands.Cog):
                     f"**Their linked CIDs:** {cid_list}"
                 )
 
-            await interaction.response.send_message(
+            await interaction.followup.send(
                 embed=_embed("✅ CID Linked", desc, 0x2ECC71),
-                ephemeral=True,
             )
 
         elif result == "already_linked":
             target_label = "your account" if subject.id == interaction.user.id else subject.mention
-            await interaction.response.send_message(
+            await interaction.followup.send(
                 embed=_embed(
                     "⚠️ Already Linked",
                     f"CID **{cid}** is already linked to {target_label}.",
                     0xF39C12,
                 ),
-                ephemeral=True,
             )
 
         elif result == "cid_taken":
             owner_id = await db.get_discord_id_for_cid(guild_id, cid)
             owner_mention = f"<@{owner_id}>" if owner_id else "another user"
-            await interaction.response.send_message(
+            await interaction.followup.send(
                 embed=_embed(
                     "❌ CID Already Owned",
                     f"CID **{cid}** is already linked to {owner_mention}.\n\n"
@@ -103,7 +101,6 @@ class LinkingCog(commands.Cog):
                     "An admin can `/unlink-cid` it from the current owner first.",
                     0xE74C3C,
                 ),
-                ephemeral=True,
             )
 
     @app_commands.command(
@@ -121,18 +118,18 @@ class LinkingCog(commands.Cog):
         cid: int,
         target_user: discord.Member = None,
     ):
+        await interaction.response.defer(ephemeral=True)
         guild_id = interaction.guild_id
 
         # If targeting another user, require admin
         if target_user is not None and target_user.id != interaction.user.id:
             if not _is_admin(interaction.user):
-                return await interaction.response.send_message(
+                return await interaction.followup.send(
                     embed=_embed(
                         "❌ Permission Denied",
                         "Only admins can unlink a CID from another user.",
                         0xE74C3C,
                     ),
-                    ephemeral=True,
                 )
             subject = target_user
         else:
@@ -155,19 +152,17 @@ class LinkingCog(commands.Cog):
                 else:
                     desc += f"\n\n{subject.mention} has no more linked CIDs."
 
-            await interaction.response.send_message(
+            await interaction.followup.send(
                 embed=_embed("✅ CID Unlinked", desc, 0x2ECC71),
-                ephemeral=True,
             )
         else:
             target_label = "your account" if subject.id == interaction.user.id else subject.mention
-            await interaction.response.send_message(
+            await interaction.followup.send(
                 embed=_embed(
                     "❌ Not Found",
                     f"CID **{cid}** is not linked to {target_label}.",
                     0xE74C3C,
                 ),
-                ephemeral=True,
             )
 
     @app_commands.command(
@@ -176,22 +171,21 @@ class LinkingCog(commands.Cog):
     )
     @app_commands.guild_only()
     async def my_cids(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
         guild_id = interaction.guild_id
         cids = await db.get_cids_for_user(guild_id, interaction.user.id)
         if cids:
             cid_list = "\n".join(f"• CID **{c}**" for c in cids)
-            await interaction.response.send_message(
+            await interaction.followup.send(
                 embed=_embed("🔗 Your Linked CIDs", cid_list, 0x3498DB),
-                ephemeral=True,
             )
         else:
-            await interaction.response.send_message(
+            await interaction.followup.send(
                 embed=_embed(
                     "🔗 No CIDs Linked",
                     "You haven't linked any CIDs yet.\nUse `/link-cid` to link your in-game character.",
                     0x95A5A6,
                 ),
-                ephemeral=True,
             )
 
 
