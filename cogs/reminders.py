@@ -1,7 +1,7 @@
 """Automated reminder system: /set-rent-channel, /set-deadline + daily task (multi-server)."""
 
 import logging
-from datetime import datetime
+import datetime
 from collections import defaultdict
 
 import discord
@@ -141,7 +141,9 @@ class RemindersCog(commands.Cog):
         )
 
     # ── Daily Background Task ─────────────────────────────────
-    @tasks.loop(hours=24)
+    # We schedule it for 06:00 PM Bangladesh Time (UTC+6).
+    # By using `time=` instead of `hours=24`, it won't instantly spam the channel on reboot.
+    @tasks.loop(time=datetime.time(hour=18, minute=0, tzinfo=datetime.timezone(datetime.timedelta(hours=6))))
     async def daily_reminder(self):
         """Run the reminder check every 24 hours for ALL guilds."""
         try:

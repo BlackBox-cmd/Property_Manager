@@ -16,7 +16,8 @@ from cogs.reminders import classify_status
 class AdminCog(commands.Cog):
     """Admin reporting tools."""
 
-    pass
+    def __init__(self, bot: commands.Bot):
+        self.bot = bot
 
     @app_commands.command(
         name="rent-summary",
@@ -291,6 +292,18 @@ class AdminCog(commands.Cog):
             await interaction.response.send_message(f"✅ {user.mention} has been added to the trusted user list.", ephemeral=True)
         else:
             await interaction.response.send_message(f"⚠️ {user.mention} is already a trusted user.", ephemeral=True)
+
+    @commands.command(name="clearsync")
+    @commands.has_permissions(administrator=True)
+    async def clearsync(self, ctx: commands.Context):
+        """Wipe out stuck guild-specific slash commands."""
+        # This clears any commands specifically registered to this guild ID
+        self.bot.tree.clear_commands(guild=ctx.guild)
+        await self.bot.tree.sync(guild=ctx.guild)
+        
+        # Then sync global commands as usual
+        synced = await self.bot.tree.sync()
+        await ctx.send(f"🧹 Cleared stuck guild-specific commands and re-synced **{len(synced)}** global commands!")
 
     @app_commands.command(
         name="untrust-user",
