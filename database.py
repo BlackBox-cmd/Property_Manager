@@ -60,12 +60,16 @@ async def init_db():
                 uploaded_at     TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
 
-            CREATE INDEX IF NOT EXISTS idx_links_guild ON discord_links(guild_id);
-            CREATE INDEX IF NOT EXISTS idx_links_discord ON discord_links(guild_id, discord_id);
-            CREATE INDEX IF NOT EXISTS idx_links_cid ON discord_links(guild_id, in_game_cid);
             CREATE INDEX IF NOT EXISTS idx_rent_guild ON rent_data(guild_id);
             CREATE INDEX IF NOT EXISTS idx_rent_cid ON rent_data(guild_id, renter_cid);
             CREATE INDEX IF NOT EXISTS idx_rent_status ON rent_data(guild_id, status);
+
+            CREATE TABLE IF NOT EXISTS trusted_users (
+                guild_id    BIGINT NOT NULL,
+                discord_id  BIGINT NOT NULL,
+                added_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (guild_id, discord_id)
+            );
             """
         )
 
@@ -243,3 +247,43 @@ async def get_all_rent_data(guild_id: int) -> list[dict]:
         guild_id
     )
     return [dict(r) for r in rows]
+
+
+async def add_trusted_user(guild_id: int, discord_id: int) -> bool:
+    """Add a user to the trusted list. Returns True if added, False if already exists."""
+    pool = await get_db()
+    try:
+        await pool.execute(
+            "INSERT INTO trusted_users (guild_id, discord_id) VALUES ($1, $2)",
+            guild_id, discord_id
+        )
+        return True
+    except asyncpg.exceptions.UniqueViolationError:
+        return False
+
+async def remove_trusted_user(guild_id: int, discord_id: int) -> bool:
+    """Remove a user from the trusted list. Returns True if removed."""
+    pool = await get_db()
+    status = await pool.execute(
+        "DELETE FROM trusted_users WHERE guild_id = $1 AND discord_id = $2",
+        guild_id, discord_id
+    )
+    return status.startswith('DELETE ') and status != 'DELETE 0'
+
+async def is_trusted_user(guild_id: int, discord_id: int) -> bool:
+    """Check if a user is trusted in a guild."""
+    pool = await get_db()
+    row = await pool.fetchrow(
+        "SELECT 1 FROM trusted_users WHERE guild_id = $1 AND discord_id = $2",
+        guild_id, discord_id
+    )
+    return row is not None
+
+async def get_trusted_users(guild_id: int) -> list[int]:
+    """Get all trusted users for a guild."""
+    pool = await get_db()
+    rows = await pool.fetch(
+        "SELECT discord_id FROM trusted_users WHERE guild_id = $1",
+        guild_id
+    )
+    return [r["discord_id"] for r in rows]

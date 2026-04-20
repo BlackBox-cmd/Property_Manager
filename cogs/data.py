@@ -9,6 +9,7 @@ from discord import app_commands
 from discord.ext import commands
 
 import database as db
+import utils
 from config import FOOTER_TEXT
 
 log = logging.getLogger("RentManager.data")
@@ -124,7 +125,6 @@ class DataCog(commands.Cog):
         message_link="Discord link to a message that has the .txt/.csv file attached",
     )
     @app_commands.guild_only()
-    @app_commands.default_permissions(administrator=True, manage_guild=True)
     async def update_data(
         self,
         interaction: discord.Interaction,
@@ -132,6 +132,9 @@ class DataCog(commands.Cog):
         csv_data: str = None,
         message_link: str = None,
     ):
+        if not await utils.is_admin_or_trusted(interaction):
+            return await interaction.response.send_message("❌ Permission Denied. You must be an Admin or Trusted User.", ephemeral=True)
+            
         guild_id = interaction.guild_id
 
         # Count how many sources were provided

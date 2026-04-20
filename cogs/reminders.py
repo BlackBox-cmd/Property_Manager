@@ -9,6 +9,7 @@ from discord import app_commands
 from discord.ext import commands, tasks
 
 import database as db
+import utils
 from config import FOOTER_TEXT
 
 log = logging.getLogger("RentManager.reminders")
@@ -17,12 +18,11 @@ RENT_CHANNEL_KEY = "rent_channel_id"
 
 
 def classify_status(raw_status: str) -> str:
-    """Classify a rent entry's status based on its specific paid date.
+    """Classify a rent entry's status.
 
     Logic:
     - "Overdue" or "Evictable" -> keep as-is (already delinquent)
-    - "Paid MM/DD/YYYY" -> if date < today  -> "Expired"
-                        -> if date >= today -> "Paid" (valid)
+    - "Paid MM/DD/YYYY" -> "Paid" (ignored for reminders)
     """
     status = raw_status.strip()
 
@@ -88,10 +88,12 @@ class RemindersCog(commands.Cog):
     )
     @app_commands.describe(channel="The channel for rent reminders")
     @app_commands.guild_only()
-    @app_commands.default_permissions(administrator=True)
     async def set_rent_channel(
         self, interaction: discord.Interaction, channel: discord.TextChannel,
     ):
+        if not await utils.is_admin_or_trusted(interaction):
+            return await interaction.response.send_message("❌ Permission Denied. You must be an Admin or Trusted User.", ephemeral=True)
+            
         guild_id = interaction.guild_id
         await db.set_setting(guild_id, RENT_CHANNEL_KEY, str(channel.id))
         await interaction.response.send_message(
@@ -110,8 +112,10 @@ class RemindersCog(commands.Cog):
         description="Manually trigger rent reminders right now",
     )
     @app_commands.guild_only()
-    @app_commands.default_permissions(administrator=True)
     async def send_reminders_now(self, interaction: discord.Interaction):
+        if not await utils.is_admin_or_trusted(interaction):
+            return await interaction.response.send_message("❌ Permission Denied. You must be an Admin or Trusted User.", ephemeral=True)
+            
         await interaction.response.defer(thinking=True)
         guild_id = interaction.guild_id
         try:
@@ -191,7 +195,7 @@ class RemindersCog(commands.Cog):
         delinquent = []
         for entry in all_rent:
             classified = classify_status(entry["status"])
-            if classified in ("Overdue", "Evictable", "Expired"):
+            if classified in ("Overdue", "Evictable"):
                 entry["classified_status"] = classified
                 delinquent.append(entry)
 
@@ -223,7 +227,6 @@ class RemindersCog(commands.Cog):
                 status_emoji = {
                     "Overdue": "🟡",
                     "Evictable": "🔴",
-                    "Expired": "🟠",
                 }.get(e["classified_status"], "⚫")
 
                 debt_lines.append(
@@ -302,7 +305,6 @@ class RemindersCog(commands.Cog):
                 status_emoji = {
                     "Overdue": "🟡",
                     "Evictable": "🔴",
-                    "Expired": "🟠",
                 }.get(e["classified_status"], "⚫")
                 lines.append(
                     f"{status_emoji} **{e['address']}** — {e['renter_name']} "

@@ -8,6 +8,7 @@ from discord import app_commands
 from discord.ext import commands
 
 import database as db
+import utils
 from config import FOOTER_TEXT
 from cogs.reminders import classify_status
 
@@ -22,8 +23,10 @@ class AdminCog(commands.Cog):
         description="Display a summary of rent collections (Overdue vs Paid)",
     )
     @app_commands.guild_only()
-    @app_commands.default_permissions(administrator=True)
     async def rent_summary(self, interaction: discord.Interaction):
+        if not await utils.is_admin_or_trusted(interaction):
+            return await interaction.response.send_message("❌ Permission Denied. You must be an Admin or Trusted User.", ephemeral=True)
+            
         guild_id = interaction.guild_id
         all_data = await db.get_all_rent_data(guild_id)
         if not all_data:
@@ -148,8 +151,10 @@ class AdminCog(commands.Cog):
         description="View all Discord-CID links (admin view)",
     )
     @app_commands.guild_only()
-    @app_commands.default_permissions(administrator=True)
     async def all_links(self, interaction: discord.Interaction):
+        if not await utils.is_admin_or_trusted(interaction):
+            return await interaction.response.send_message("❌ Permission Denied. You must be an Admin or Trusted User.", ephemeral=True)
+            
         guild_id = interaction.guild_id
         links = await db.get_all_links(guild_id)
         if not links:
@@ -212,8 +217,10 @@ class AdminCog(commands.Cog):
         description="Get a list of all renters and their phone numbers",
     )
     @app_commands.guild_only()
-    @app_commands.default_permissions(administrator=True)
     async def renter_phones(self, interaction: discord.Interaction):
+        if not await utils.is_admin_or_trusted(interaction):
+            return await interaction.response.send_message("❌ Permission Denied. You must be an Admin or Trusted User.", ephemeral=True)
+            
         guild_id = interaction.guild_id
         all_data = await db.get_all_rent_data(guild_id)
 
@@ -270,6 +277,34 @@ class AdminCog(commands.Cog):
             else:
                 await interaction.followup.send(embed=embed)
 
+
+    @app_commands.command(
+        name="trust-user",
+        description="Add a Discord user to the trusted list for admin commands",
+    )
+    @app_commands.describe(user="The Discord user to trust")
+    @app_commands.guild_only()
+    @app_commands.default_permissions(administrator=True)
+    async def trust_user(self, interaction: discord.Interaction, user: discord.Member):
+        added = await db.add_trusted_user(interaction.guild_id, user.id)
+        if added:
+            await interaction.response.send_message(f"✅ {user.mention} has been added to the trusted user list.", ephemeral=True)
+        else:
+            await interaction.response.send_message(f"⚠️ {user.mention} is already a trusted user.", ephemeral=True)
+
+    @app_commands.command(
+        name="untrust-user",
+        description="Remove a Discord user from the trusted list",
+    )
+    @app_commands.describe(user="The Discord user to untrust")
+    @app_commands.guild_only()
+    @app_commands.default_permissions(administrator=True)
+    async def untrust_user(self, interaction: discord.Interaction, user: discord.Member):
+        removed = await db.remove_trusted_user(interaction.guild_id, user.id)
+        if removed:
+            await interaction.response.send_message(f"✅ {user.mention} has been removed from the trusted user list.", ephemeral=True)
+        else:
+            await interaction.response.send_message(f"⚠️ {user.mention} wasn't in the trusted user list.", ephemeral=True)
 
 async def setup(bot: commands.Bot):
     await bot.add_cog(AdminCog(bot))
