@@ -239,7 +239,9 @@ class RemindersCog(commands.Cog):
         # Send per-user reminder messages (with chunking for large debt lists)
         for discord_id, entries in user_debts.items():
             debt_lines = []
+            total_due = 0
             for e in entries:
+                total_due += e.get("cost", 0)
                 status_emoji = {
                     "Overdue": "🟡",
                     "Evictable": "🔴",
@@ -294,7 +296,7 @@ class RemindersCog(commands.Cog):
                     guild_name = guild.name if guild else f"Server {guild_id}"
 
                     dm_header = f"You have outstanding rent in **{guild_name}**:\n\n"
-                    dm_footer_text = "\n\nPlease pay immediately to avoid eviction."
+                    dm_footer_text = f"\n\n**Total Due: ${total_due:,}**\n\nPlease pay immediately to avoid eviction."
 
                     dm_chunks = _chunk_lines(debt_lines, max_chars=3500)
                     for dm_chunk in dm_chunks:

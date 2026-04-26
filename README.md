@@ -31,10 +31,13 @@
 | `/unlink-cid` | Remove a CID link | Everyone |
 | `/my-cids` | View your linked CIDs | Everyone |
 | `/update-data` | Upload rent data (file, CSV, or message link) | Admin |
-| `/rent-summary` | View rent collection summary | Admin |
-| `/all-links` | View all Discord ↔ CID links | Admin |
+| `/rent-summary` | View rent collection summary | Admin / Trusted |
+| `/all-links` | View all Discord ↔ CID links | Admin / Trusted |
+| `/renter-phones` | Get a list of renters and their phone numbers | Admin / Trusted |
+| `/trust-user` | Add a Discord user to the trusted list | Admin |
+| `/untrust-user` | Remove a Discord user from the trusted list | Admin |
+| `!clearsync` | Wipe out stuck guild-specific slash commands | Admin |
 | `/set-rent-channel` | Set channel for rent reminders | Admin |
-| `/set-deadline` | Set the rent payment deadline date | Admin |
 | `/send-reminders` | Manually trigger rent reminders | Admin |
 
 ## 🚀 Setup
@@ -82,17 +85,18 @@
 
 ## 📁 Project Structure
 
-```
+```text
 Property_Manager/
 ├── bot.py              # Entry point — loads cogs, starts the bot
 ├── config.py           # Shared constants (footer text, activities)
 ├── database.py         # SQLite database layer (CID links, settings, rent data)
+├── utils.py            # Utility functions (permissions checking)
 ├── requirements.txt    # Python dependencies
 ├── .env.example        # Template for environment variables
 ├── .gitignore          # Git ignore rules
 └── cogs/
     ├── __init__.py
-    ├── admin.py        # /rent-summary, /all-links
+    ├── admin.py        # /rent-summary, /all-links, /renter-phones, trust commands
     ├── data.py         # /update-data (CSV/file/message link ingestion)
     ├── help.py         # /help (interactive dropdown)
     ├── linking.py      # /link-cid, /unlink-cid, /my-cids
@@ -116,7 +120,6 @@ Reminders run **every 24 hours** automatically and can also be triggered manuall
 |---------|-----------|-------------|
 | `DISCORD_TOKEN` | `.env` file | Your bot's authentication token |
 | Rent Channel | `/set-rent-channel` | Where reminders get posted |
-| Rent Deadline | `/set-deadline` | Date by which rent must be paid (defaults to 18th of current month) |
 
 ## 🤝 Contributing
 
