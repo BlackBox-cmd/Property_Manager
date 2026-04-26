@@ -1,7 +1,7 @@
 """Automated reminder system: /set-rent-channel, /set-deadline + daily task (multi-server)."""
 
 import logging
-from datetime import datetime
+import datetime
 from collections import defaultdict
 
 import discord
@@ -9,6 +9,7 @@ from discord import app_commands
 from discord.ext import commands, tasks
 
 import database as db
+import utils
 from config import FOOTER_TEXT
 
 log = logging.getLogger("RentManager.reminders")
@@ -101,10 +102,12 @@ class RemindersCog(commands.Cog):
     )
     @app_commands.describe(channel="The channel for rent reminders")
     @app_commands.guild_only()
-    @app_commands.default_permissions(administrator=True)
     async def set_rent_channel(
         self, interaction: discord.Interaction, channel: discord.TextChannel,
     ):
+        if not await utils.is_admin_or_trusted(interaction):
+            return await interaction.response.send_message("❌ Permission Denied. You must be an Admin or Trusted User.", ephemeral=True)
+            
         guild_id = interaction.guild_id
         await db.set_setting(guild_id, RENT_CHANNEL_KEY, str(channel.id))
         await interaction.response.send_message(
@@ -123,8 +126,10 @@ class RemindersCog(commands.Cog):
         description="Manually trigger rent reminders right now",
     )
     @app_commands.guild_only()
-    @app_commands.default_permissions(administrator=True)
     async def send_reminders_now(self, interaction: discord.Interaction):
+        if not await utils.is_admin_or_trusted(interaction):
+            return await interaction.response.send_message("❌ Permission Denied. You must be an Admin or Trusted User.", ephemeral=True)
+            
         await interaction.response.defer(thinking=True)
         guild_id = interaction.guild_id
         try:
@@ -150,7 +155,9 @@ class RemindersCog(commands.Cog):
         )
 
     # ── Daily Background Task ─────────────────────────────────
-    @tasks.loop(hours=24)
+    # We schedule it for 06:00 PM Bangladesh Time (UTC+6).
+    # By using `time=` instead of `hours=24`, it won't instantly spam the channel on reboot.
+    @tasks.loop(time=datetime.time(hour=18, minute=0, tzinfo=datetime.timezone(datetime.timedelta(hours=6))))
     async def daily_reminder(self):
         """Run the reminder check every 24 hours for ALL guilds."""
         try:
@@ -204,7 +211,7 @@ class RemindersCog(commands.Cog):
         delinquent = []
         for entry in all_rent:
             classified = classify_status(entry["status"])
-            if classified in ("Overdue", "Evictable", "Expired"):
+            if classified in ("Overdue", "Evictable"):
                 entry["classified_status"] = classified
                 delinquent.append(entry)
 
@@ -236,7 +243,6 @@ class RemindersCog(commands.Cog):
                 status_emoji = {
                     "Overdue": "🟡",
                     "Evictable": "🔴",
-                    "Expired": "🟠",
                 }.get(e["classified_status"], "⚫")
 
                 debt_lines.append(
@@ -315,7 +321,6 @@ class RemindersCog(commands.Cog):
                 status_emoji = {
                     "Overdue": "🟡",
                     "Evictable": "🔴",
-                    "Expired": "🟠",
                 }.get(e["classified_status"], "⚫")
                 lines.append(
                     f"{status_emoji} **{e['address']}** — {e['renter_name']} "

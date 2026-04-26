@@ -8,22 +8,26 @@ from discord import app_commands
 from discord.ext import commands
 
 import database as db
+import utils
 from config import FOOTER_TEXT
-from cogs.reminders import classify_status, _get_deadline
+from cogs.reminders import classify_status
 
 
 class AdminCog(commands.Cog):
     """Admin reporting tools."""
 
-    pass
+    def __init__(self, bot: commands.Bot):
+        self.bot = bot
 
     @app_commands.command(
         name="rent-summary",
         description="Display a summary of rent collections (Overdue vs Paid)",
     )
     @app_commands.guild_only()
-    @app_commands.default_permissions(administrator=True)
     async def rent_summary(self, interaction: discord.Interaction):
+        if not await utils.is_admin_or_trusted(interaction):
+            return await interaction.response.send_message("❌ Permission Denied. You must be an Admin or Trusted User.", ephemeral=True)
+            
         guild_id = interaction.guild_id
         all_data = await db.get_all_rent_data(guild_id)
         if not all_data:
@@ -38,9 +42,8 @@ class AdminCog(commands.Cog):
         # Build DataFrame for Pandas analysis
         df = pd.DataFrame(all_data)
 
-        # Classify statuses using the per-guild deadline
-        deadline = await _get_deadline(guild_id)
-        df["classified"] = df["status"].apply(lambda s: classify_status(s, deadline))
+        # Classify statuses
+        df["classified"] = df["status"].apply(classify_status)
 
         # Aggregate
         total_entries = len(df)
@@ -149,8 +152,10 @@ class AdminCog(commands.Cog):
         description="View all Discord-CID links (admin view)",
     )
     @app_commands.guild_only()
-    @app_commands.default_permissions(administrator=True)
     async def all_links(self, interaction: discord.Interaction):
+        if not await utils.is_admin_or_trusted(interaction):
+            return await interaction.response.send_message("❌ Permission Denied. You must be an Admin or Trusted User.", ephemeral=True)
+            
         guild_id = interaction.guild_id
         links = await db.get_all_links(guild_id)
         if not links:
@@ -208,6 +213,111 @@ class AdminCog(commands.Cog):
             else:
                 await interaction.followup.send(embed=embed)
 
+    @app_commands.command(
+        name="renter-phones",
+        description="Get a list of all renters and their phone numbers",
+    )
+    @app_commands.guild_only()
+    async def renter_phones(self, interaction: discord.Interaction):
+        if not await utils.is_admin_or_trusted(interaction):
+            return await interaction.response.send_message("❌ Permission Denied. You must be an Admin or Trusted User.", ephemeral=True)
+            
+        guild_id = interaction.guild_id
+        all_data = await db.get_all_rent_data(guild_id)
+
+        if not all_data:
+            embed = discord.Embed(
+                title="ℹ️ No Data",
+                description="No rent data loaded yet. Use `/update-data` to upload.",
+                color=0x95A5A6,
+            )
+            embed.set_footer(text=FOOTER_TEXT)
+            return await interaction.response.send_message(embed=embed, ephemeral=True)
+
+        # Filter out entries without a renter
+        valid_entries = [e for e in all_data if e.get("renter_cid") and e.get("renter_name")]
+
+        if not valid_entries:
+            return await interaction.response.send_message("No occupied properties found to list phone numbers for.", ephemeral=True)
+
+        # Format lines: Address — Renter Name (CID) — Phone
+        lines = []
+        for e in valid_entries:
+            phone = e.get("renter_phone", "No Phone Found")
+            lines.append(f"🏠 **{e['address']}**\n👤 {e['renter_name']} (CID: {e['renter_cid']})\n📞 `{phone}`")
+
+        # Paginate to stay under limits
+        pages = []
+        current_page = []
+        current_len = 0
+        for line in lines:
+            line_len = len(line) + 2  # +2 for extra spacing
+            if current_len + line_len > 3500 and current_page:
+                pages.append(current_page)
+                current_page = []
+                current_len = 0
+            current_page.append(line)
+            current_len += line_len
+        if current_page:
+            pages.append(current_page)
+
+        for i, page_lines in enumerate(pages):
+            title = "📞 Renter Phone Directory"
+            if len(pages) > 1:
+                title += f" ({i + 1}/{len(pages)})"
+
+            embed = discord.Embed(
+                title=title,
+                description="\n\n".join(page_lines),
+                color=0x3498DB,
+            )
+            embed.set_footer(text=f"Total Properties: {len(valid_entries)} | {FOOTER_TEXT}")
+
+            if i == 0:
+                await interaction.response.send_message(embed=embed)
+            else:
+                await interaction.followup.send(embed=embed)
+
+
+    @app_commands.command(
+        name="trust-user",
+        description="Add a Discord user to the trusted list for admin commands",
+    )
+    @app_commands.describe(user="The Discord user to trust")
+    @app_commands.guild_only()
+    @app_commands.default_permissions(administrator=True)
+    async def trust_user(self, interaction: discord.Interaction, user: discord.Member):
+        added = await db.add_trusted_user(interaction.guild_id, user.id)
+        if added:
+            await interaction.response.send_message(f"✅ {user.mention} has been added to the trusted user list.", ephemeral=True)
+        else:
+            await interaction.response.send_message(f"⚠️ {user.mention} is already a trusted user.", ephemeral=True)
+
+    @commands.command(name="clearsync")
+    @commands.has_permissions(administrator=True)
+    async def clearsync(self, ctx: commands.Context):
+        """Wipe out stuck guild-specific slash commands."""
+        # This clears any commands specifically registered to this guild ID
+        self.bot.tree.clear_commands(guild=ctx.guild)
+        await self.bot.tree.sync(guild=ctx.guild)
+        
+        # Then sync global commands as usual
+        synced = await self.bot.tree.sync()
+        await ctx.send(f"🧹 Cleared stuck guild-specific commands and re-synced **{len(synced)}** global commands!")
+
+    @app_commands.command(
+        name="untrust-user",
+        description="Remove a Discord user from the trusted list",
+    )
+    @app_commands.describe(user="The Discord user to untrust")
+    @app_commands.guild_only()
+    @app_commands.default_permissions(administrator=True)
+    async def untrust_user(self, interaction: discord.Interaction, user: discord.Member):
+        removed = await db.remove_trusted_user(interaction.guild_id, user.id)
+        if removed:
+            await interaction.response.send_message(f"✅ {user.mention} has been removed from the trusted user list.", ephemeral=True)
+        else:
+            await interaction.response.send_message(f"⚠️ {user.mention} wasn't in the trusted user list.", ephemeral=True)
 
 async def setup(bot: commands.Bot):
     await bot.add_cog(AdminCog(bot))

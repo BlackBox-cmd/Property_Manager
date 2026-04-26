@@ -5,6 +5,7 @@ from discord import app_commands
 from discord.ext import commands
 
 import database as db
+import utils
 from config import FOOTER_TEXT
 
 
@@ -50,7 +51,7 @@ class LinkingCog(commands.Cog):
                 return await interaction.followup.send(
                     embed=_embed(
                         "❌ Permission Denied",
-                        "Only admins can link a CID to another user.",
+                        "Only admins or trusted users can link a CID to another user.",
                         0xE74C3C,
                     ),
                 )
@@ -127,7 +128,7 @@ class LinkingCog(commands.Cog):
                 return await interaction.followup.send(
                     embed=_embed(
                         "❌ Permission Denied",
-                        "Only admins can unlink a CID from another user.",
+                        "Only admins or trusted users can unlink a CID from another user.",
                         0xE74C3C,
                     ),
                 )
