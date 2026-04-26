@@ -47,7 +47,7 @@ class LinkingCog(commands.Cog):
 
         # If targeting another user, require admin
         if target_user is not None and target_user.id != interaction.user.id:
-            if not await utils.is_admin_or_trusted(interaction):
+            if not _is_admin(interaction.user):
                 return await interaction.followup.send(
                     embed=_embed(
                         "❌ Permission Denied",
@@ -124,7 +124,7 @@ class LinkingCog(commands.Cog):
 
         # If targeting another user, require admin
         if target_user is not None and target_user.id != interaction.user.id:
-            if not await utils.is_admin_or_trusted(interaction):
+            if not _is_admin(interaction.user):
                 return await interaction.followup.send(
                     embed=_embed(
                         "❌ Permission Denied",

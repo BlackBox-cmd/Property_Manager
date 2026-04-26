@@ -5,6 +5,7 @@ import logging
 import os
 import random
 import discord
+import aiohttp
 from discord.ext import commands, tasks
 from dotenv import load_dotenv
 from database import init_db
@@ -14,6 +15,8 @@ load_dotenv()
 
 # ── Config ────────────────────────────────────────────────────
 TOKEN = os.getenv("DISCORD_TOKEN")
+UPTIME_KUMA_URL = os.getenv("UPTIME_KUMA_URL")
+UPTIME_KUMA_HEARTBEAT = int(os.getenv("UPTIME_KUMA_HEARTBEAT", "30"))
 
 # ── Logging ───────────────────────────────────────────────────
 logging.basicConfig(
@@ -60,6 +63,24 @@ async def before_rotate():
     await bot.wait_until_ready()
 
 
+@tasks.loop(seconds=UPTIME_KUMA_HEARTBEAT if UPTIME_KUMA_HEARTBEAT > 0 else 30)
+async def uptime_kuma_ping():
+    if UPTIME_KUMA_URL:
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(UPTIME_KUMA_URL) as response:
+                    # Just reading the status to make sure we don't spam errors unless really down
+                    if response.status != 200:
+                        log.warning(f"Uptime Kuma ping returned HTTP {response.status}")
+        except Exception as e:
+            log.warning(f"Failed to ping Uptime Kuma: {e}")
+
+
+@uptime_kuma_ping.before_loop
+async def before_kuma_ping():
+    await bot.wait_until_ready()
+
+
 @bot.event
 async def on_ready():
     log.info(f"Logged in as {bot.user} (ID: {bot.user.id})")
@@ -67,6 +88,10 @@ async def on_ready():
 
     if not rotate_activity.is_running():
         rotate_activity.start()
+
+    if UPTIME_KUMA_URL and not uptime_kuma_ping.is_running():
+        uptime_kuma_ping.start()
+        log.info(f"Started Uptime Kuma pings every {UPTIME_KUMA_HEARTBEAT}s")
 
     log.info("Rent Manager Bot is ready!")
 

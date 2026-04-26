@@ -18,11 +18,12 @@ RENT_CHANNEL_KEY = "rent_channel_id"
 
 
 def classify_status(raw_status: str) -> str:
-    """Classify a rent entry's status.
+    """Classify a rent entry's status based on its specific paid date.
 
     Logic:
     - "Overdue" or "Evictable" -> keep as-is (already delinquent)
-    - "Paid MM/DD/YYYY" -> "Paid" (ignored for reminders)
+    - "Paid MM/DD/YYYY" -> if date < today  -> "Expired"
+                        -> if date >= today -> "Paid" (valid)
     """
     status = raw_status.strip()
 
@@ -30,7 +31,20 @@ def classify_status(raw_status: str) -> str:
         return status.capitalize()
 
     if status.lower().startswith("paid"):
-        return "Paid"
+        # Extract the date portion: "Paid 3/17/2026" -> "3/17/2026"
+        parts = status.split(" ", 1)
+        if len(parts) > 1:
+            date_str = parts[1].strip()
+            try:
+                paid_date = datetime.strptime(date_str, "%m/%d/%Y")
+            except ValueError:
+                return status  # Can't parse, return raw
+
+            today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+            if paid_date < today:
+                return "Expired"
+            else:
+                return "Paid"
 
     return status
 
