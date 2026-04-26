@@ -36,3 +36,4 @@ desktop.ini
 *.zip
 *.tar.gz
 *.rar
+.cache/
