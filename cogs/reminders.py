@@ -36,11 +36,11 @@ def classify_status(raw_status: str) -> str:
         if len(parts) > 1:
             date_str = parts[1].strip()
             try:
-                paid_date = datetime.strptime(date_str, "%m/%d/%Y")
+                paid_date = datetime.datetime.strptime(date_str, "%m/%d/%Y")
             except ValueError:
                 return status  # Can't parse, return raw
 
-            today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+            today = datetime.datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
             if paid_date < today:
                 return "Expired"
             else:
