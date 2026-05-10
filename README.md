@@ -34,6 +34,8 @@
 | `/rent-summary` | View rent collection summary | Admin / Trusted |
 | `/all-links` | View all Discord ↔ CID links | Admin / Trusted |
 | `/renter-phones` | Get a list of renters and their phone numbers | Admin / Trusted |
+| `/linkedstatus` | Show linked and unlinked CIDs with interactive views | Admin / Trusted |
+| `/sys` | Display System Information (Bot Owner only) | Owner |
 | `/trust-user` | Add a Discord user to the trusted list | Admin |
 | `/untrust-user` | Remove a Discord user from the trusted list | Admin |
 | `!clearsync` | Wipe out stuck guild-specific slash commands | Admin |
@@ -96,7 +98,7 @@ Property_Manager/
 ├── .gitignore          # Git ignore rules
 └── cogs/
     ├── __init__.py
-    ├── admin.py        # /rent-summary, /all-links, /renter-phones, trust commands
+    ├── admin.py        # /rent-summary, /all-links, /renter-phones, /linkedstatus, /sys, trust cmds
     ├── data.py         # /update-data (CSV/file/message link ingestion)
     ├── help.py         # /help (interactive dropdown)
     ├── linking.py      # /link-cid, /unlink-cid, /my-cids
@@ -119,6 +121,7 @@ Reminders run **every 24 hours** automatically and can also be triggered manuall
 | Setting | How to Set | Description |
 |---------|-----------|-------------|
 | `DISCORD_TOKEN` | `.env` file | Your bot's authentication token |
+| `OwnerId` | `.env` file | Discord ID of the bot owner (for `/sys` access) |
 | Rent Channel | `/set-rent-channel` | Where reminders get posted |
 
 ## 🤝 Contributing

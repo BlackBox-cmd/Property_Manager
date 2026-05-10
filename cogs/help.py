@@ -26,6 +26,11 @@ COMMAND_CATEGORIES = {
             ("/update-data", "Upload rent data via file, pasted CSV, or message link", True),
             ("/rent-summary", "View a full financial summary with status breakdown", True),
             ("/all-links", "View every Discord ↔ CID link in the server", True),
+            ("/renter-phones", "Get a list of all renters and their phone numbers", True),
+            ("/linkedstatus", "Show how many in-game CIDs are linked to Discord accounts", True),
+            ("/trust-user", "Add a Discord user to the trusted list for admin commands", True),
+            ("/untrust-user", "Remove a Discord user from the trusted list", True),
+            ("/sys", "Display System Information (Bot Owner only)", True),
         ],
     },
     "🔔 Reminders": {
