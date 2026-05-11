@@ -31,20 +31,7 @@ def classify_status(raw_status: str) -> str:
         return status.capitalize()
 
     if status.lower().startswith("paid"):
-        # Extract the date portion: "Paid 3/17/2026" -> "3/17/2026"
-        parts = status.split(" ", 1)
-        if len(parts) > 1:
-            date_str = parts[1].strip()
-            try:
-                paid_date = datetime.datetime.strptime(date_str, "%m/%d/%Y")
-            except ValueError:
-                return status  # Can't parse, return raw
-
-            today = datetime.datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
-            if paid_date < today:
-                return "Expired"
-            else:
-                return "Paid"
+        return "Paid"
 
     return status
 

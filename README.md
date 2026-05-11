@@ -19,6 +19,7 @@
 - 📊 **Rent Data Import** — Upload `.csv` / `.txt` files, paste CSV, or reference Discord messages
 - 🔔 **Automated Reminders** — Daily rent reminders posted to a channel **and** delivered via DMs
 - 📈 **Admin Reports** — Financial summaries, status breakdowns, and top debtor tracking
+- 📞 **Phone Directory** — Searchable renter contact list with interactive button pagination and auto-suggestion
 - 🌐 **Multi-Server Support** — Fully isolated per-guild data with unique CID ownership
 - 📖 **Interactive Help** — Dropdown-based `/help` command with categorized navigation
 
@@ -33,7 +34,7 @@
 | `/update-data` | Upload rent data (file, CSV, or message link) | Admin |
 | `/rent-summary` | View rent collection summary | Admin / Trusted |
 | `/all-links` | View all Discord ↔ CID links | Admin / Trusted |
-| `/renter-phones` | Get a list of renters and their phone numbers | Admin / Trusted |
+| `/renter-phones` | List/Search renter phone numbers with button pagination and auto-suggestion | Admin / Trusted |
 | `/linkedstatus` | Show linked and unlinked CIDs with interactive views | Admin / Trusted |
 | `/sys` | Display System Information (Bot Owner only) | Owner |
 | `/trust-user` | Add a Discord user to the trusted list | Admin |

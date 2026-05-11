@@ -174,9 +174,8 @@ class AdminCog(commands.Cog):
             "Paid": "🟢",
             "Overdue": "🟡",
             "Evictable": "🔴",
-            "Expired": "🟠",
         }
-        for status in ["Paid", "Overdue", "Evictable", "Expired"]:
+        for status in ["Paid", "Overdue", "Evictable"]:
             count = status_counts.get(status, 0)
             cost = status_costs.get(status, 0)
             emoji = status_emojis.get(status, "⚫")
@@ -199,7 +198,7 @@ class AdminCog(commands.Cog):
         )
 
         # Top debtors
-        delinquent = df[df["classified"].isin(["Overdue", "Evictable", "Expired"])]
+        delinquent = df[df["classified"].isin(["Overdue", "Evictable"])]
         if not delinquent.empty:
             top_debtors = (
                 delinquent.groupby(["renter_cid", "renter_name"])["cost"]
@@ -314,8 +313,12 @@ class AdminCog(commands.Cog):
         name="renter-phones",
         description="Get a list of all renters and their phone numbers",
     )
+    @app_commands.describe(
+        cid="Search for a specific renter's phone by CID",
+        renter_name="Search for a specific renter's phone by Name"
+    )
     @app_commands.guild_only()
-    async def renter_phones(self, interaction: discord.Interaction):
+    async def renter_phones(self, interaction: discord.Interaction, cid: str = None, renter_name: str = None):
         if not await utils.is_admin_or_trusted(interaction):
             return await interaction.response.send_message("❌ Permission Denied. You must be an Admin or Trusted User.", ephemeral=True)
             
@@ -339,43 +342,42 @@ class AdminCog(commands.Cog):
         if not valid_entries:
             return await interaction.followup.send("No occupied properties found to list phone numbers for.", ephemeral=True)
 
+        if cid:
+            valid_entries = [e for e in valid_entries if str(e.get("renter_cid")) == str(cid)]
+            
+        if renter_name:
+            valid_entries = [e for e in valid_entries if e.get("renter_name").lower() == renter_name.lower()]
+
+        if not valid_entries:
+            return await interaction.followup.send("No renters found matching your search criteria.", ephemeral=True)
+
         # Format lines: Address — Renter Name (CID) — Phone
         lines = []
         for e in valid_entries:
             phone = e.get("renter_phone", "No Phone Found")
-            lines.append(f"🏠 **{e['address']}**\n👤 {e['renter_name']} (CID: {e['renter_cid']})\n📞 `{phone}`")
+            lines.append(f"🏠 **{e['address']}**\n👤 {e['renter_name']} (CID: {e['renter_cid']})\n📞 `{phone}`\n")
 
-        # Paginate to stay under limits
-        pages = []
-        current_page = []
-        current_len = 0
-        for line in lines:
-            line_len = len(line) + 2  # +2 for extra spacing
-            if current_len + line_len > 3500 and current_page:
-                pages.append(current_page)
-                current_page = []
-                current_len = 0
-            current_page.append(line)
-            current_len += line_len
-        if current_page:
-            pages.append(current_page)
+        view = PaginatorView(lines, "📞 Renter Phone Directory")
+        if len(view.pages) <= 1:
+            view.clear_items()
+            
+        embed = view.get_embed()
+        
+        await interaction.followup.send(embed=embed, view=view)
 
-        for i, page_lines in enumerate(pages):
-            title = "📞 Renter Phone Directory"
-            if len(pages) > 1:
-                title += f" ({i + 1}/{len(pages)})"
-
-            embed = discord.Embed(
-                title=title,
-                description="\n\n".join(page_lines),
-                color=0x3498DB,
-            )
-            embed.set_footer(text=f"Total Properties: {len(valid_entries)} | {FOOTER_TEXT}")
-
-            if i == 0:
-                await interaction.followup.send(embed=embed)
-            else:
-                await interaction.followup.send(embed=embed)
+    @renter_phones.autocomplete("renter_name")
+    async def renter_phones_autocomplete(self, interaction: discord.Interaction, current: str) -> list[app_commands.Choice[str]]:
+        guild_id = interaction.guild_id
+        if not guild_id:
+            return []
+            
+        pool = await db.get_db()
+        rows = await pool.fetch(
+            "SELECT DISTINCT renter_name FROM rent_data WHERE guild_id = $1 AND renter_name IS NOT NULL AND renter_name ILIKE $2 LIMIT 25",
+            guild_id, f"%{current}%"
+        )
+        
+        return [app_commands.Choice(name=r["renter_name"], value=r["renter_name"]) for r in rows]
 
 
     @app_commands.command(
