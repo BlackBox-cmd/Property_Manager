@@ -70,6 +70,15 @@ async def init_db():
                 added_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 PRIMARY KEY (guild_id, discord_id)
             );
+
+            CREATE TABLE IF NOT EXISTS honeytrap_settings (
+                guild_id BIGINT PRIMARY KEY,
+                honeytrap_channel_id BIGINT,
+                log_channel_id BIGINT,
+                action_type TEXT DEFAULT 'timeout',
+                enabled BOOLEAN DEFAULT FALSE,
+                dm_message TEXT
+            );
             """
         )
 
@@ -287,3 +296,56 @@ async def get_trusted_users(guild_id: int) -> list[int]:
         guild_id
     )
     return [r["discord_id"] for r in rows]
+
+async def get_honeytrap_settings(guild_id: int) -> dict | None:
+    """Get honeytrap settings for a guild."""
+    pool = await get_db()
+    row = await pool.fetchrow(
+        "SELECT honeytrap_channel_id, log_channel_id, action_type, enabled, dm_message FROM honeytrap_settings WHERE guild_id = $1",
+        guild_id
+    )
+    if row:
+        return dict(row)
+    return None
+
+
+async def set_honeytrap_setting(guild_id: int, key: str, value):
+    """Set a specific honeytrap setting for a guild."""
+    allowed_keys = ['honeytrap_channel_id', 'log_channel_id', 'action_type', 'enabled', 'dm_message']
+    if key not in allowed_keys:
+        raise ValueError(f"Invalid key: {key}")
+    pool = await get_db()
+    await pool.execute(
+        f"""
+        INSERT INTO honeytrap_settings (guild_id, {key})
+        VALUES ($1, $2)
+        ON CONFLICT (guild_id)
+        DO UPDATE SET {key} = EXCLUDED.{key}
+        """,
+        guild_id, value
+    )
+
+
+async def update_honeytrap_settings(guild_id: int, **kwargs):
+    """Update multiple honeytrap settings for a guild."""
+    allowed_keys = ['honeytrap_channel_id', 'log_channel_id', 'action_type', 'enabled', 'dm_message']
+    # Filter out any keys that are not allowed
+    settings = {k: v for k, v in kwargs.items() if k in allowed_keys}
+    if not settings:
+        return
+
+    pool = await get_db()
+    # Build the SET clause for the UPDATE part of the ON CONFLICT
+    set_clause = ', '.join([f"{key} = EXCLUDED.{key}" for key in settings.keys()])
+    # Build the INSERT part: we always insert the guild_id and then the settings we are updating
+    columns = ['guild_id'] + list(settings.keys())
+    placeholders = [f'${i+1}' for i in range(len(columns))]
+    values = [guild_id] + list(settings.values())
+
+    query = f"""
+        INSERT INTO honeytrap_settings ({', '.join(columns)})
+        VALUES ({', '.join(placeholders)})
+        ON CONFLICT (guild_id)
+        DO UPDATE SET {set_clause}
+    """
+    await pool.execute(query, *values)

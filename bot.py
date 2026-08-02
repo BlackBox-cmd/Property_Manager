@@ -39,6 +39,7 @@ COGS = [
     "cogs.reminders",
     "cogs.admin",
     "cogs.help",
+    "cogs.honeytrap",
 ]
 
 

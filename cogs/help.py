@@ -42,6 +42,15 @@ COMMAND_CATEGORIES = {
             ("/send-reminders", "Manually trigger rent reminders right now", True),
         ],
     },
+    "🍯 Honeytrap": {
+        "emoji": "🍯",
+        "description": "Anti-spam/anti-raid system with 24-hour timeout.",
+        "commands": [
+            ("/honeytrap configure", "Set up the honeytrap channel, log channel, and action", True),
+            ("/honeytrap toggle", "Enable or disable the honeytrap system", True),
+            ("/honeytrap info", "Show current honeytrap configuration", True),
+        ],
+    },
     "ℹ️ Info": {
         "emoji": "ℹ️",
         "description": "General bot information.",

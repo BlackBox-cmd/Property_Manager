@@ -21,6 +21,7 @@
 - 📈 **Admin Reports** — Financial summaries, status breakdowns, and top debtor tracking
 - 📞 **Phone Directory** — Searchable renter contact list with interactive button pagination and auto-suggestion
 - 🌐 **Multi-Server Support** — Fully isolated per-guild data with unique CID ownership
+- 🍯 **Honeytrap** — Anti-spam/anti-raid system with 24-hour timeout for detected spam or raiding activity
 - 📖 **Interactive Help** — Dropdown-based `/help` command with categorized navigation
 
 ## 📋 Commands
