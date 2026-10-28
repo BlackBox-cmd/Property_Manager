@@ -54,6 +54,7 @@
 | `/role block-role` | Map a block address to a Discord role | Admin |
 | `/role logs` | Set channel for role sync operation logs | Admin |
 | `/role list` | Show all configured role mappings | Admin |
+| `/role resync` | Manually resync all linked users' roles | Admin / Trusted |
 
 ## 🚀 Setup
 
@@ -140,15 +141,24 @@ When a user successfully links their CID using `/link-cid`, they are automatical
 
 ### Block Roles
 When rental data is uploaded via `/update-data`, the bot:
-1. **Extracts the block name** from each renter's address (e.g., "Forum Drive 2 / Apt 1" → "Forum Drive 2")
+1. **Extracts the block name** from each renter's address
+   - `"Forum Drive 2 / Apt 1"` → `"Forum Drive"`
+   - `"Niland Avenue 1"` → `"Niland Avenue"`
+   - `"Clinton Ave / Apt1"` → `"Clinton Ave"`
 2. **Assigns the corresponding block role** to linked users automatically
 3. **Updates roles** when renters move between blocks
 4. **Removes block roles** when renters are no longer in the dataset
 
+### Block Detection
+When data is updated, the bot automatically detects blocks that have renters but no roles configured and shows a warning with the list of blocks needing roles.
+
+### Manual Resync
+Use `/role resync` to manually resync all linked users' roles at any time (Admin/Trusted users only).
+
 ### Setup Workflow
 1. **Grant the bot** the `Manage Roles` permission
 2. **Configure the Linked User Role**: `/role link-role @LinkedUsers`
-3. **Map block names to roles**: `/role block-role "Forum Drive 2" @ForumDrive2`
+3. **Map block names to roles**: `/role block-role "Forum Drive" @ForumDrive`
 4. **(Optional) Set logs channel**: `/role logs #role-logs`
 5. **Upload data**: `/update-data` triggers automatic role synchronization
 
@@ -158,17 +168,19 @@ When rental data is uploaded via `/update-data`, the bot:
 - ✅ Graceful error handling for API failures and permission issues
 - ✅ Comprehensive logging of all role assignments and removals
 - ✅ Synchronous operation ensures data consistency before role changes
+- ✅ Detects and reports blocks without configured roles
 
 ### Example
 ```
 1. Admin: /role link-role @Linked
-2. Admin: /role block-role "Forum Drive 2" @FD2Role
+2. Admin: /role block-role "Forum Drive" @FD2Role
 3. User: /link-cid 292
    → User receives @Linked role
 4. Admin: /update-data (uploads data with CID 292 at "Forum Drive 2 / Apt 1")
    → User receives @FD2Role
-5. Admin: /update-data (new data shows CID 292 moved to "Main Street / Apt 5")
-   → User loses @FD2Role, receives @MainStreetRole (if configured)
+   → Bot detects "Clinton Ave" has no role configured and warns admin
+5. Admin: /update-data (new data shows CID 292 moved to "Clinton Ave / Apt 5")
+   → User loses @FD2Role, receives @ClintonRole (if configured)
 ```
 
 ## ⚙️ Configuration

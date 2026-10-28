@@ -51,6 +51,17 @@ COMMAND_CATEGORIES = {
             ("/honeytrap info", "Show current honeytrap configuration", True),
         ],
     },
+    "🎭 Role Management": {
+        "emoji": "🎭",
+        "description": "Automatic role assignment based on linked CIDs and rental data.",
+        "commands": [
+            ("/role link-role", "Set the role assigned when users link their CID", True),
+            ("/role block-role", "Map a block name to a Discord role", True),
+            ("/role logs", "Set the channel for role sync operation logs", True),
+            ("/role list", "Show all configured role mappings", True),
+            ("/role resync", "Manually resync all linked users' roles", True),
+        ],
+    },
     "ℹ️ Info": {
         "emoji": "ℹ️",
         "description": "General bot information.",
