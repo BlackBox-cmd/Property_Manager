@@ -176,6 +176,11 @@ async def _sync_roles_for_data_update(guild: discord.Guild, rows: list[dict]) ->
             # Update history to mark as removed
             await db.set_renter_block(guild_id, cid, None)
 
+    # Detect new blocks in the data that don't have roles configured
+    new_blocks_in_data = set(new_renter_blocks.values())
+    configured_blocks = set(block_mappings.keys())
+    blocks_without_roles = sorted(new_blocks_in_data - configured_blocks)
+
     # Check if linked user role needs to be assigned (for existing linked users in new data)
     linked_role_id = await db.get_setting(guild_id, "linked_user_role_id")
     if linked_role_id:
@@ -235,6 +240,14 @@ async def _sync_roles_for_data_update(guild: discord.Guild, rows: list[dict]) ->
                 inline=False,
             )
 
+        # Add blocks without roles if any
+        if blocks_without_roles:
+            sync_embed.add_field(
+                name="⚠️ Blocks Without Roles",
+                value=f"These blocks have renters but no roles configured:\n```\n" + "\n".join(blocks_without_roles[:10]) + ("..." if len(blocks_without_roles) > 10 else "") + "\n```\nUse `/role block-role` to configure.",
+                inline=False,
+            )
+
         # Summary
         summary = f"Assigned: **{len(assigned)}** | Moved: **{len(moved)}** | Removed: **{len(removed)}** | Errors: **{len(errors)}**"
         sync_embed.add_field(name="Summary", value=summary, inline=False)
@@ -252,6 +265,7 @@ async def _sync_roles_for_data_update(guild: discord.Guild, rows: list[dict]) ->
         "moved": moved,
         "errors": errors,
         "skipped_no_role": skipped_no_role,
+        "blocks_without_roles": blocks_without_roles,
     }
 
 
@@ -596,6 +610,17 @@ class DataCog(commands.Cog):
                     f"⚠️ Errors: {len(role_sync_result['errors'])}"
                 )
                 embed.add_field(name="Role Sync", value=sync_summary, inline=True)
+
+            # Add blocks without roles warning
+            if role_sync_result.get("blocks_without_roles"):
+                blocks_text = ", ".join(role_sync_result["blocks_without_roles"][:5])
+                if len(role_sync_result["blocks_without_roles"]) > 5:
+                    blocks_text += f" (+{len(role_sync_result['blocks_without_roles']) - 5} more)"
+                embed.add_field(
+                    name="⚠️ Blocks Need Roles",
+                    value=f"Configure roles for: **{blocks_text}**\nUse `/role block-role <block> <role>`",
+                    inline=False,
+                )
 
             embed.set_footer(text=f"{unique_renters} unique renters | {FOOTER_TEXT}")
 
