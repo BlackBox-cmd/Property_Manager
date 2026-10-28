@@ -312,18 +312,25 @@ def clean_and_parse(raw_text: str) -> pd.DataFrame:
     if "Cost" in df.columns:
         df["Cost"] = df["Cost"].apply(clean_currency)
 
-    # 5. Filter out Empty status and N/A CIDs
-    if "Status" in df.columns:
-        df = df[df["Status"].str.strip().str.lower() != "empty"]
-    if "Renter CID" in df.columns:
-        df = df[df["Renter CID"].astype(str).str.strip().str.upper() != "N/A"]
+    # 5. Handle Renter CID — allow N/A for Empty status, convert others to numeric
+    if "Renter CID" in df.columns and "Status" in df.columns:
+        # For non-Empty properties, N/A is invalid — filter them out
+        is_empty = df["Status"].astype(str).str.strip().str.lower() == "empty"
+        is_na = df["Renter CID"].astype(str).str.strip().str.upper() == "N/A"
+
+        # Keep: Empty properties (regardless of CID), or non-Empty with valid CID
+        df = df[is_empty | ~is_na]
+
+        # Convert Renter CID to numeric (N/A becomes NaN, valid numbers stay)
         df["Renter CID"] = pd.to_numeric(df["Renter CID"], errors="coerce")
-        df = df.dropna(subset=["Renter CID"])
-        df["Renter CID"] = df["Renter CID"].astype(int)
+
+        # Convert to int where not NaN
+        mask = df["Renter CID"].notna()
+        df.loc[mask, "Renter CID"] = df.loc[mask, "Renter CID"].astype(int)
 
     # Clean up Renter Name (strip extra whitespace from joined names)
     if "Renter Name" in df.columns:
-        df["Renter Name"] = df["Renter Name"].str.strip().str.replace(r'\s+', ' ', regex=True)
+        df["Renter Name"] = df["Renter Name"].astype(str).str.strip().str.replace(r'\s+', ' ', regex=True)
 
     df = df.reset_index(drop=True)
     return df

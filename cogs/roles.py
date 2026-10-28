@@ -209,6 +209,227 @@ class RolesCog(commands.Cog):
         await interaction.followup.send(embed=embed)
 
     @app_commands.command(
+        name="role-resync",
+        description="Resync all roles for all linked users (Linked User Role + Block Roles)",
+    )
+    @app_commands.guild_only()
+    async def role_resync(self, interaction: discord.Interaction):
+        """Resync all linked user roles based on current data."""
+        await interaction.response.defer(ephemeral=True)
+
+        # Check permissions - admin or trusted users only
+        if not await utils.is_admin_or_trusted(interaction):
+            return await interaction.followup.send(
+                embed=_embed(
+                    "❌ Permission Denied",
+                    "Only admins or trusted users can resync roles.",
+                    0xE74C3C,
+                ),
+            )
+
+        guild = interaction.guild
+        guild_id = guild.id
+
+        # Check if bot has Manage Roles permission
+        if not guild.me.guild_permissions.manage_roles:
+            return await interaction.followup.send(
+                embed=_embed(
+                    "❌ Permission Error",
+                    "I don't have the **Manage Roles** permission on this server.",
+                    0xE74C3C,
+                ),
+            )
+
+        # Get configuration
+        linked_role_id = await db.get_setting(guild_id, "linked_user_role_id")
+        block_mappings = await db.list_all_role_mappings(guild_id)
+
+        if not linked_role_id and not block_mappings:
+            return await interaction.followup.send(
+                embed=_embed(
+                    "⚠️ No Roles Configured",
+                    "No linked user role or block roles have been configured yet.\n"
+                    "Use `/role link-role` and `/role block-role` to set up role assignments.",
+                    0xF39C12,
+                ),
+            )
+
+        # Get all linked users
+        all_links = await db.get_all_links(guild_id)
+        if not all_links:
+            return await interaction.followup.send(
+                embed=_embed(
+                    "ℹ️ No Linked Users",
+                    "No Discord accounts are currently linked to any CIDs.",
+                    0x3498DB,
+                ),
+            )
+
+        # Get current rent data
+        rent_data = await db.get_all_rent_data(guild_id)
+        rent_data_by_cid = {}
+        if rent_data:
+            for row in rent_data:
+                cid = row.get("renter_cid")
+                if cid:
+                    rent_data_by_cid[cid] = row
+
+        # Track results
+        assigned_linked = []
+        assigned_block = []
+        removed_block = []
+        errors = []
+
+        # Process each linked user
+        for discord_id, cids in all_links.items():
+            member = guild.get_member(discord_id)
+            if not member:
+                errors.append(f"<@{discord_id}>: Member not found in server")
+                continue
+
+            # Assign Linked User Role
+            if linked_role_id:
+                try:
+                    role_id = int(linked_role_id)
+                    linked_role = guild.get_role(role_id)
+                    if linked_role:
+                        if linked_role not in member.roles:
+                            # Check hierarchy
+                            bot_highest = _get_bot_highest_role(guild)
+                            if bot_highest and linked_role < bot_highest:
+                                await member.add_roles(linked_role, reason="Role resync - linked user")
+                                assigned_linked.append(member.display_name)
+                    else:
+                        errors.append(f"Linked user role not found (ID: {role_id})")
+                except discord.Forbidden:
+                    errors.append(f"{member.display_name}: Permission denied for linked role")
+                except discord.HTTPException as e:
+                    errors.append(f"{member.display_name}: API error - {str(e)}")
+                except (ValueError, TypeError):
+                    errors.append(f"Invalid linked role ID: {linked_role_id}")
+
+            # Process each CID for this user
+            for cid in cids:
+                renter_data = rent_data_by_cid.get(cid)
+                if not renter_data:
+                    # CID not in current rent data - remove any block roles
+                    old_block = await db.get_renter_block(guild_id, cid)
+                    if old_block:
+                        old_role_id = block_mappings.get(old_block)
+                        if old_role_id:
+                            old_role = guild.get_role(old_role_id)
+                            if old_role and old_role in member.roles:
+                                try:
+                                    await member.remove_roles(old_role, reason="Role resync - CID removed from data")
+                                    removed_block.append(f"{member.display_name}: {old_role.name}")
+                                except discord.Forbidden:
+                                    errors.append(f"{member.display_name}: Permission denied to remove {old_role.name}")
+                                except discord.HTTPException as e:
+                                    errors.append(f"{member.display_name}: API error - {str(e)}")
+                        await db.set_renter_block(guild_id, cid, None)
+                    continue
+
+                # CID is in rent data - get block and assign role
+                address = renter_data.get("address", "")
+                block = _extract_block_from_address(address)
+
+                # Get block role
+                role_id = block_mappings.get(block)
+                if not role_id:
+                    continue  # No role configured for this block
+
+                role = guild.get_role(role_id)
+                if not role:
+                    errors.append(f"Block '{block}': Role not found (ID: {role_id})")
+                    continue
+
+                # Check hierarchy
+                bot_highest = _get_bot_highest_role(guild)
+                if bot_highest and role >= bot_highest:
+                    errors.append(f"{member.display_name}: Cannot assign {role.name} (hierarchy issue)")
+                    continue
+
+                # Check if already has the role
+                if role in member.roles:
+                    # Update history
+                    await db.set_renter_block(guild_id, cid, block)
+                    continue
+
+                # Assign the role
+                try:
+                    await member.add_roles(role, reason="Role resync - block assignment")
+                    assigned_block.append(f"{member.display_name}: {role.name}")
+                    # Update history
+                    await db.set_renter_block(guild_id, cid, block)
+                except discord.Forbidden:
+                    errors.append(f"{member.display_name}: Permission denied for {role.name}")
+                except discord.HTTPException as e:
+                    errors.append(f"{member.display_name}: API error - {str(e)}")
+
+        # Build response embed
+        embed = _embed(
+            "🔄 Role Resync Complete",
+            f"Processed **{len(all_links)}** linked users.",
+            0x5865F2,
+        )
+
+        # Add fields for results
+        if assigned_linked:
+            embed.add_field(
+                name=f"✅ Linked Roles Assigned ({len(assigned_linked)})",
+                value="\n".join(assigned_linked[:10]) + ("..." if len(assigned_linked) > 10 else ""),
+                inline=False,
+            )
+
+        if assigned_block:
+            embed.add_field(
+                name=f"🏠 Block Roles Assigned ({len(assigned_block)})",
+                value="\n".join(assigned_block[:10]) + ("..." if len(assigned_block) > 10 else ""),
+                inline=False,
+            )
+
+        if removed_block:
+            embed.add_field(
+                name=f"❌ Block Roles Removed ({len(removed_block)})",
+                value="\n".join(removed_block[:10]) + ("..." if len(removed_block) > 10 else ""),
+                inline=False,
+            )
+
+        if errors:
+            embed.add_field(
+                name=f"⚠️ Errors ({len(errors)})",
+                value="\n".join(errors[:5]) + ("..." if len(errors) > 5 else ""),
+                inline=False,
+            )
+
+        await interaction.followup.send(embed=embed)
+
+        # Log to channel if configured
+        logs_channel_id = await db.get_setting(guild_id, "role_logs_channel_id")
+        if logs_channel_id:
+            try:
+                logs_channel = guild.get_channel(int(logs_channel_id))
+                if logs_channel:
+                    log_embed = _embed(
+                        "🔄 Manual Role Resync",
+                        f"Triggered by {interaction.user.mention}",
+                        0x5865F2,
+                    )
+                    log_embed.add_field(
+                        name="Summary",
+                        value=f"Linked Roles: **{len(assigned_linked)}**\n"
+                              f"Block Roles Assigned: **{len(assigned_block)}**\n"
+                              f"Block Roles Removed: **{len(removed_block)}**\n"
+                              f"Errors: **{len(errors)}**",
+                        inline=False,
+                    )
+                    await logs_channel.send(embed=log_embed)
+            except (ValueError, TypeError, discord.Forbidden, discord.HTTPException) as e:
+                log.warning(f"Could not send resync log to channel: {e}")
+
+        log.info(f"[Guild {guild_id}] Role resync: {len(assigned_linked)} linked, {len(assigned_block)} block assigned, {len(removed_block)} removed, {len(errors)} errors")
+
+    @app_commands.command(
         name="role-list",
         description="Show all current role configurations",
     )
