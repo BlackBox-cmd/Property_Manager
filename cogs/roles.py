@@ -23,13 +23,22 @@ def _extract_block_from_address(address: str) -> str:
     """Extract block name from address.
 
     Examples:
-        "Forum Drive 2 / Apt 1" -> "Forum Drive 2"
-        "Janitor Apartment" -> "Janitor Apartment"
-        "Forum Drive 2" -> "Forum Drive 2"
+        "Forum Drive 2 / Apt 1" -> "Forum Drive"
+        "Clinton Ave / Apt1" -> "Clinton Ave"
+        "Niland Avenue 1" -> "Niland Avenue"
+        "Steele Way 2" -> "Steele Way"
     """
+    import re
+    # Handle "/" separator first
     if "/" in address:
-        return address.split("/")[0].strip()
-    return address.strip()
+        address = address.split("/")[0].strip()
+
+    # Strip trailing numbers (e.g., " 1", " 2", " 3") at the end
+    # "Forum Drive 2" -> "Forum Drive"
+    # "Niland Avenue 1" -> "Niland Avenue"
+    address = re.sub(r'\s+\d+$', '', address).strip()
+
+    return address
 
 
 def _get_bot_highest_role(guild: discord.Guild) -> discord.Role | None:
