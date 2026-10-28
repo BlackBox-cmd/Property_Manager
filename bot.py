@@ -15,6 +15,7 @@ load_dotenv()
 
 # ── Config ────────────────────────────────────────────────────
 TOKEN = os.getenv("DISCORD_TOKEN")
+MONITORING_ENABLED = os.getenv("MONITORING_ENABLED", "true").lower() == "true"
 UPTIME_KUMA_URL = os.getenv("UPTIME_KUMA_URL")
 UPTIME_KUMA_HEARTBEAT = int(os.getenv("UPTIME_KUMA_HEARTBEAT", "30"))
 
@@ -91,9 +92,11 @@ async def on_ready():
     if not rotate_activity.is_running():
         rotate_activity.start()
 
-    if UPTIME_KUMA_URL and not uptime_kuma_ping.is_running():
+    if MONITORING_ENABLED and UPTIME_KUMA_URL and not uptime_kuma_ping.is_running():
         uptime_kuma_ping.start()
         log.info(f"Started Uptime Kuma pings every {UPTIME_KUMA_HEARTBEAT}s")
+    elif not MONITORING_ENABLED:
+        log.info("Monitoring is disabled via MONITORING_ENABLED=false")
 
     log.info("Rent Manager Bot is ready!")
 
