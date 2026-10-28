@@ -324,9 +324,8 @@ def clean_and_parse(raw_text: str) -> pd.DataFrame:
         # Convert Renter CID to numeric (N/A becomes NaN, valid numbers stay)
         df["Renter CID"] = pd.to_numeric(df["Renter CID"], errors="coerce")
 
-        # Convert to int where not NaN
-        mask = df["Renter CID"].notna()
-        df.loc[mask, "Renter CID"] = df.loc[mask, "Renter CID"].astype(int)
+        # Convert to int where not NaN (use Int64 dtype to allow NaN)
+        df["Renter CID"] = df["Renter CID"].astype("Int64")
 
     # Clean up Renter Name (strip extra whitespace from joined names)
     if "Renter Name" in df.columns:
@@ -534,7 +533,7 @@ class DataCog(commands.Cog):
                     "status": str(row.get("Status", "")).strip(),
                     "address": str(row.get("Address", "")).strip(),
                     "interior": str(row.get("Interior", "")).strip() if "Interior" in df.columns else "",
-                    "renter_cid": int(row.get("Renter CID", 0)),
+                    "renter_cid": int(row.get("Renter CID", 0)) if pd.notna(row.get("Renter CID")) else 0,
                     "renter_name": str(row.get("Renter Name", "")).strip() if "Renter Name" in df.columns else "",
                     "renter_phone": str(row.get("Phone", "")).strip() if "Phone" in df.columns else "",
                     "income": int(row.get("Income", 0)),

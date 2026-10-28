@@ -265,6 +265,16 @@ class RolesCog(commands.Cog):
                 ),
             )
 
+        # Group links by discord_id
+        links_by_user = {}
+        for link in all_links:
+            discord_id = link.get("discord_id")
+            cid = link.get("in_game_cid")
+            if discord_id and cid:
+                if discord_id not in links_by_user:
+                    links_by_user[discord_id] = []
+                links_by_user[discord_id].append(cid)
+
         # Get current rent data
         rent_data = await db.get_all_rent_data(guild_id)
         rent_data_by_cid = {}
@@ -281,7 +291,7 @@ class RolesCog(commands.Cog):
         errors = []
 
         # Process each linked user
-        for discord_id, cids in all_links.items():
+        for discord_id, cids in links_by_user.items():
             member = guild.get_member(discord_id)
             if not member:
                 errors.append(f"<@{discord_id}>: Member not found in server")
@@ -369,7 +379,7 @@ class RolesCog(commands.Cog):
         # Build response embed
         embed = _embed(
             "🔄 Role Resync Complete",
-            f"Processed **{len(all_links)}** linked users.",
+            f"Processed **{len(links_by_user)}** linked users.",
             0x5865F2,
         )
 
