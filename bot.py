@@ -38,6 +38,7 @@ COGS = [
     "cogs.data",
     "cogs.linking",
     "cogs.roles",
+    "cogs.logs",
     "cogs.reminders",
     "cogs.admin",
     "cogs.help",

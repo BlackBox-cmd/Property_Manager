@@ -7,7 +7,7 @@
 <p align="center">
   <img src="https://img.shields.io/badge/python-3.10%2B-blue?logo=python&logoColor=white" alt="Python 3.10+">
   <img src="https://img.shields.io/badge/discord.py-2.3%2B-5865F2?logo=discord&logoColor=white" alt="discord.py 2.3+">
-  <img src="https://img.shields.io/badge/database-SQLite-003B57?logo=sqlite&logoColor=white" alt="SQLite">
+  <img src="https://img.shields.io/badge/database-PostgreSQL-336791?logo=postgresql&logoColor=white" alt="PostgreSQL">
   <img src="https://img.shields.io/badge/license-MIT-green" alt="MIT License">
 </p>
 
@@ -21,6 +21,7 @@
 - 📈 **Admin Reports** — Financial summaries, status breakdowns, and top debtor tracking
 - 📞 **Phone Directory** — Searchable renter contact list with interactive button pagination and auto-suggestion
 - 🎭 **Automatic Role Management** — Auto-assign roles to linked users (Linked User Role + Block Roles based on address)
+- 📋 **Log Channel Configuration** — Separate `/logs` commands for role sync logging
 - 🌐 **Multi-Server Support** — Fully isolated per-guild data with unique CID ownership
 - 🍯 **Honeytrap** — Anti-spam/anti-raid system with 24-hour timeout for detected spam or raiding activity
 - 📖 **Interactive Help** — Dropdown-based `/help` command with categorized navigation
@@ -55,6 +56,10 @@
 | `/role logs` | Set channel for role sync operation logs | Admin |
 | `/role list` | Show all configured role mappings | Admin |
 | `/role resync` | Manually resync all linked users' roles | Admin / Trusted |
+| `/role remove-link-role` | Remove the linked user role configuration | Admin |
+| `/role remove-block-role` | Remove a block-to-role mapping | Admin |
+| `/logs` | Set channel for role sync logs | Admin |
+| `/remove-logs` | Remove the configured logs channel | Admin |
 
 ## 🚀 Setup
 
@@ -103,7 +108,7 @@
 
 ```text
 Property_Manager/
-├── bot.py              # Entry point — loads cogs, starts the bot
+├── bot.py              # Entry point — loads cogs, starts the bot, monitoring integration
 ├── config.py           # Shared constants (footer text, activities)
 ├── database.py         # PostgreSQL database layer (CID links, settings, rent data, role mappings)
 ├── utils.py            # Utility functions (permissions checking)
@@ -114,9 +119,10 @@ Property_Manager/
     ├── __init__.py
     ├── admin.py        # /rent-summary, /all-links, /renter-phones, /linkedstatus, /sys, trust cmds
     ├── data.py         # /update-data (CSV/file/message link ingestion) + role sync
-    ├── help.py         # /help (interactive dropdown)
+    ├── help.py         # /help (interactive dropdown with categorized navigation)
     ├── linking.py      # /link-cid, /unlink-cid, /my-cids + role assignment on link
-    ├── roles.py        # /role commands (link-role, block-role, logs, list)
+    ├── logs.py         # /logs, /remove-logs — configure role operation logging
+    ├── roles.py        # /role commands (link-role, block-role, resync, list, remove commands)
     ├── reminders.py    # /set-rent-channel, /send-reminders, daily task + DMs
     └── honeytrap.py    # Anti-spam/anti-raid protection
 ```
@@ -183,12 +189,47 @@ Use `/role resync` to manually resync all linked users' roles at any time (Admin
    → User loses @FD2Role, receives @ClintonRole (if configured)
 ```
 
+## 🆕 What's New (October 2026)
+
+### Block Extraction Improvements
+- **New behavior:** Block names are now extracted by stripping trailing numbers
+  - `"Forum Drive 2 / Apt 1"` → `"Forum Drive"` (was: `"Forum Drive 2"`)
+  - `"Niland Avenue 1"` → `"Niland Avenue"` (was: `"Niland Avenue 1"`)
+  - `"Steele Way 3"` → `"Steele Way"` (was: `"Steele Way 3"`)
+- **Benefit:** Configure one role per street, not per apartment number
+
+### New Block Detection
+- When data is updated, the bot now **detects blocks without configured roles**
+- Shows a warning in `/update-data` response listing all blocks needing roles
+- Logs the same information to the configured logs channel
+- Example: `⚠️ Blocks Without Roles: Forum Drive, Niland Avenue`
+
+### New Logs Cog
+- **Moved:** `/role logs` → `/logs` (single command, no prefix)
+- **New:** `/remove-logs` - Remove the logs channel configuration
+- **Separate category** in `/help` for easier navigation
+
+### New Role Management Commands
+| Command | Description |
+|---------|-------------|
+| `/role resync` | Manually resync all linked users' roles |
+| `/role remove-link-role` | Remove the linked user role configuration |
+| `/role remove-block-role <block>` | Remove a block role mapping (with autocomplete) |
+| `/remove-logs` | Remove the logs channel configuration |
+
+### Help System Updates
+- **New "📋 Logs" category** in `/help` with `/logs` and `/remove-logs`
+- **Updated "🎭 Role Management" category** with all role subcommands
+
 ## ⚙️ Configuration
 
 | Setting | How to Set | Description |
 |---------|-----------|-------------|
 | `DISCORD_TOKEN` | `.env` file | Your bot's authentication token |
 | `OwnerId` | `.env` file | Discord ID of the bot owner (for `/sys` access) |
+| `MONITORING_ENABLED` | `.env` file | Enable/disable monitoring features (default: true) |
+| `UPTIME_KUMA_URL` | `.env` file | Optional Uptime Kuma URL for heartbeat monitoring |
+| `UPTIME_KUMA_HEARTBEAT` | `.env` file | Heartbeat interval in seconds (default: 30) |
 | Rent Channel | `/set-rent-channel` | Where reminders get posted |
 
 ## 🤝 Contributing

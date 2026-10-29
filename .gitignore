@@ -26,7 +26,8 @@ migrate_to_supabase.py
 *.swp
 *.swo
 *~
-
+#── ai-shop  ──────────────────────────────────────────────
+graphify-out/
 # ── OS Files ──────────────────────────────────────────────────
 .DS_Store
 Thumbs.db

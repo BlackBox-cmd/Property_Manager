@@ -57,9 +57,18 @@ COMMAND_CATEGORIES = {
         "commands": [
             ("/role link-role", "Set the role assigned when users link their CID", True),
             ("/role block-role", "Map a block name to a Discord role", True),
-            ("/role logs", "Set the channel for role sync operation logs", True),
             ("/role list", "Show all configured role mappings", True),
             ("/role resync", "Manually resync all linked users' roles", True),
+            ("/role remove-link-role", "Remove the linked user role configuration", True),
+            ("/role remove-block-role", "Remove a block role mapping", True),
+        ],
+    },
+    "📋 Logs": {
+        "emoji": "📋",
+        "description": "Configure logging for role operations.",
+        "commands": [
+            ("/logs", "Set the channel for role sync operation logs", True),
+            ("/remove-logs", "Remove the configured logs channel", True),
         ],
     },
     "ℹ️ Info": {
