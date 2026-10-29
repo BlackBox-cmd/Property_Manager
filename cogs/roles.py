@@ -539,6 +539,168 @@ class RolesCog(commands.Cog):
 
         await interaction.followup.send(embed=embed)
 
+    @app_commands.command(
+        name="role-remove-link-role",
+        description="Remove the configured linked user role",
+    )
+    @app_commands.default_permissions(administrator=True)
+    async def role_remove_link_role(self, interaction: discord.Interaction):
+        """Remove the linked user role configuration."""
+        await interaction.response.defer(ephemeral=True)
+
+        guild_id = interaction.guild_id
+
+        # Check if there's a linked role configured
+        current_role_id = await db.get_setting(guild_id, "linked_user_role_id")
+        if not current_role_id:
+            return await interaction.followup.send(
+                embed=_embed(
+                    "ℹ️ No Linked Role",
+                    "No linked user role is currently configured.",
+                    0x3498DB,
+                ),
+            )
+
+        # Get role name for display
+        role_name = "Unknown"
+        try:
+            role = interaction.guild.get_role(int(current_role_id))
+            if role:
+                role_name = role.name
+        except (ValueError, TypeError):
+            pass
+
+        # Remove the setting
+        await db.set_setting(guild_id, "linked_user_role_id", "")
+
+        await interaction.followup.send(
+            embed=_embed(
+                "✅ Linked Role Removed",
+                f"The linked user role (**{role_name}**) has been removed.",
+                0x57F287,
+            ),
+        )
+        log.info(f"Linked user role removed in guild {guild_id}")
+
+    @app_commands.command(
+        name="role-remove-block-role",
+        description="Remove a block role mapping",
+    )
+    @app_commands.describe(
+        block="The block name to remove the role mapping for",
+    )
+    @app_commands.default_permissions(administrator=True)
+    async def role_remove_block_role(
+        self,
+        interaction: discord.Interaction,
+        block: str,
+    ):
+        """Remove a block role mapping."""
+        await interaction.response.defer(ephemeral=True)
+
+        guild_id = interaction.guild_id
+
+        # Check if there's a mapping for this block
+        current_role_id = await db.get_role_mapping(guild_id, block)
+        if not current_role_id:
+            return await interaction.followup.send(
+                embed=_embed(
+                    "ℹ️ No Mapping Found",
+                    f"No role mapping exists for block **'{block}'**.",
+                    0x3498DB,
+                ),
+            )
+
+        # Get role name for display
+        role_name = "Unknown"
+        try:
+            role = interaction.guild.get_role(current_role_id)
+            if role:
+                role_name = role.name
+        except (ValueError, TypeError):
+            pass
+
+        # Delete the mapping
+        await db.delete_role_mapping(guild_id, block)
+
+        await interaction.followup.send(
+            embed=_embed(
+                "✅ Block Role Removed",
+                f"The role mapping for block **'{block}'** (role: **{role_name}**) has been removed.",
+                0x57F287,
+            ),
+        )
+        log.info(f"Block role mapping removed: '{block}' in guild {guild_id}")
+
+    @role_remove_block_role.autocomplete("block")
+    async def block_remove_autocomplete(
+        self,
+        interaction: discord.Interaction,
+        current: str,
+    ):
+        """Autocomplete for block names - suggest configured blocks."""
+        guild_id = interaction.guild_id
+        if not guild_id:
+            return []
+
+        try:
+            block_mappings = await db.list_all_role_mappings(guild_id)
+            if block_mappings:
+                # Filter by current input
+                filtered = [b for b in block_mappings.keys() if current.lower() in b.lower()]
+                sorted_blocks = sorted(filtered)[:25]
+                return [
+                    app_commands.Choice(name=block, value=block)
+                    for block in sorted_blocks
+                ]
+        except Exception as e:
+            log.warning(f"Error fetching blocks for autocomplete: {e}")
+
+        return []
+
+    @app_commands.command(
+        name="role-remove-logs",
+        description="Remove the configured logs channel",
+    )
+    @app_commands.default_permissions(administrator=True)
+    async def role_remove_logs(self, interaction: discord.Interaction):
+        """Remove the logs channel configuration."""
+        await interaction.response.defer(ephemeral=True)
+
+        guild_id = interaction.guild_id
+
+        # Check if there's a logs channel configured
+        current_channel_id = await db.get_setting(guild_id, "role_logs_channel_id")
+        if not current_channel_id:
+            return await interaction.followup.send(
+                embed=_embed(
+                    "ℹ️ No Logs Channel",
+                    "No logs channel is currently configured.",
+                    0x3498DB,
+                ),
+            )
+
+        # Get channel name for display
+        channel_name = "Unknown"
+        try:
+            channel = interaction.guild.get_channel(int(current_channel_id))
+            if channel:
+                channel_name = f"#{channel.name}"
+        except (ValueError, TypeError):
+            pass
+
+        # Remove the setting
+        await db.set_setting(guild_id, "role_logs_channel_id", "")
+
+        await interaction.followup.send(
+            embed=_embed(
+                "✅ Logs Channel Removed",
+                f"The logs channel (**{channel_name}**) has been removed.",
+                0x57F287,
+            ),
+        )
+        log.info(f"Role logs channel removed in guild {guild_id}")
+
     @role_block_role.autocomplete("block")
     async def block_autocomplete(
         self,

@@ -19,10 +19,14 @@ def _embed(title: str, description: str, color: int) -> discord.Embed:
     return e
 
 
-def _is_admin(member: discord.Member) -> bool:
-    """Return True if the member has administrator or manage_guild permission."""
-    perms = member.guild_permissions
-    return perms.administrator or perms.manage_guild
+async def _is_admin(interaction: discord.Interaction) -> bool:
+    """Return True if the member has admin permissions OR is in the trusted users list."""
+    # Check Discord permissions first
+    perms = interaction.user.guild_permissions if isinstance(interaction.user, discord.Member) else None
+    if perms and (perms.administrator or perms.manage_guild):
+        return True
+    # Check database for trusted user status
+    return await db.is_trusted_user(interaction.guild_id, interaction.user.id)
 
 
 def _get_bot_highest_role(guild: discord.Guild) -> discord.Role | None:
@@ -194,7 +198,7 @@ class LinkingCog(commands.Cog):
 
         # If targeting another user, require admin
         if target_user is not None and target_user.id != interaction.user.id:
-            if not _is_admin(interaction.user):
+            if not await _is_admin(interaction):
                 return await interaction.followup.send(
                     embed=_embed(
                         "❌ Permission Denied",
@@ -278,7 +282,7 @@ class LinkingCog(commands.Cog):
 
         # If targeting another user, require admin
         if target_user is not None and target_user.id != interaction.user.id:
-            if not _is_admin(interaction.user):
+            if not await _is_admin(interaction):
                 return await interaction.followup.send(
                     embed=_embed(
                         "❌ Permission Denied",
