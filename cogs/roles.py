@@ -188,36 +188,6 @@ class RolesCog(commands.Cog):
         await interaction.followup.send(embed=embed)
 
     @app_commands.command(
-        name="role-logs",
-        description="Set the channel for role assignment/removal logs",
-    )
-    @app_commands.describe(
-        channel="The Discord channel for role sync logs",
-    )
-    @app_commands.default_permissions(administrator=True)
-    async def role_logs(
-        self,
-        interaction: discord.Interaction,
-        channel: discord.TextChannel,
-    ):
-        """Configure the logs channel for role operations."""
-        await interaction.response.defer(ephemeral=True)
-
-        guild_id = interaction.guild_id
-
-        # Store in settings
-        await db.set_setting(guild_id, "role_logs_channel_id", str(channel.id))
-
-        log.info(f"Role logs channel configured: #{channel.name} (ID: {channel.id}) in guild {guild_id}")
-
-        embed = _embed(
-            "✅ Logs Channel Set",
-            f"Role assignment and removal events will be logged to #{channel.name}.",
-            0x57F287,
-        )
-        await interaction.followup.send(embed=embed)
-
-    @app_commands.command(
         name="role-resync",
         description="Resync all roles for all linked users (Linked User Role + Block Roles)",
     )
@@ -657,49 +627,6 @@ class RolesCog(commands.Cog):
             log.warning(f"Error fetching blocks for autocomplete: {e}")
 
         return []
-
-    @app_commands.command(
-        name="role-remove-logs",
-        description="Remove the configured logs channel",
-    )
-    @app_commands.default_permissions(administrator=True)
-    async def role_remove_logs(self, interaction: discord.Interaction):
-        """Remove the logs channel configuration."""
-        await interaction.response.defer(ephemeral=True)
-
-        guild_id = interaction.guild_id
-
-        # Check if there's a logs channel configured
-        current_channel_id = await db.get_setting(guild_id, "role_logs_channel_id")
-        if not current_channel_id:
-            return await interaction.followup.send(
-                embed=_embed(
-                    "ℹ️ No Logs Channel",
-                    "No logs channel is currently configured.",
-                    0x3498DB,
-                ),
-            )
-
-        # Get channel name for display
-        channel_name = "Unknown"
-        try:
-            channel = interaction.guild.get_channel(int(current_channel_id))
-            if channel:
-                channel_name = f"#{channel.name}"
-        except (ValueError, TypeError):
-            pass
-
-        # Remove the setting
-        await db.set_setting(guild_id, "role_logs_channel_id", "")
-
-        await interaction.followup.send(
-            embed=_embed(
-                "✅ Logs Channel Removed",
-                f"The logs channel (**{channel_name}**) has been removed.",
-                0x57F287,
-            ),
-        )
-        log.info(f"Role logs channel removed in guild {guild_id}")
 
     @role_block_role.autocomplete("block")
     async def block_autocomplete(
